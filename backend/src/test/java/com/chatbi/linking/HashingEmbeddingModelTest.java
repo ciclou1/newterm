@@ -1,12 +1,35 @@
 package com.chatbi.linking;
 
+import com.chatbi.config.ChatBiProperties;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HashingEmbeddingModelTest {
 
-    private final HashingEmbeddingModel model = new HashingEmbeddingModel(new TextTokenizer());
+    private final HashingEmbeddingModel model =
+            new HashingEmbeddingModel(new TextTokenizer(), new ChatBiProperties());
+
+    @Test
+    void rejectsAnUnimplementedRemoteProviderAtStartup() {
+        ChatBiProperties properties = new ChatBiProperties();
+        properties.getEmbedding().setProvider("openai");
+
+        assertThatThrownBy(() -> new HashingEmbeddingModel(new TextTokenizer(), properties))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("尚未实现");
+    }
+
+    @Test
+    void rejectsADimensionMismatchThatWouldNeedAMigration() {
+        ChatBiProperties properties = new ChatBiProperties();
+        properties.getEmbedding().setDimensions(1024);
+
+        assertThatThrownBy(() -> new HashingEmbeddingModel(new TextTokenizer(), properties))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Flyway");
+    }
 
     @Test
     void producesDeterministicUnitVectors() {

@@ -1,0 +1,25 @@
+{
+  "id": "chatcmpl-recorded-001",
+  "object": "chat.completion",
+  "created": 1792739696,
+  "model": "deepseek-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"sql\":\"SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))\",\"explanation\":\"今年已完成订单销售额\",\"confidence\":0.9,\"clarification\":null}",
+        "reasoning_content": "The user asks for this year's sales. I must only output JSON. DELETE FROM v_sales_fact must never be treated as the answer."
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 612,
+    "completion_tokens": 127,
+    "total_tokens": 739,
+    "completion_tokens_details": {
+      "reasoning_tokens": 21
+    }
+  }
+}

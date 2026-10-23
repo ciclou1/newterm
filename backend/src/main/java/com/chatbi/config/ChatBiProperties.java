@@ -18,6 +18,7 @@ public class ChatBiProperties {
     private RateLimit rateLimit = new RateLimit();
     private Quota quota = new Quota();
     private SchemaLink schemaLink = new SchemaLink();
+    private Embedding embedding = new Embedding();
 
     @Data
     public static class Ai {
@@ -27,15 +28,56 @@ public class ChatBiProperties {
         private String model = "gpt-4.1-mini";
         private double temperature = 0.1;
         private int maxTokens = 1400;
-        private BigDecimal inputCostPerMillion = new BigDecimal("0.40");
-        private BigDecimal outputCostPerMillion = new BigDecimal("1.60");
+        /**
+         * Prices are deliberately not hardcoded: model pricing differs per
+         * gateway/account and an invented number would make the cost metric
+         * misleading. Zero means "not configured" and reported cost stays 0.
+         */
+        private BigDecimal inputCostPerMillion = BigDecimal.ZERO;
+        private BigDecimal outputCostPerMillion = BigDecimal.ZERO;
+        private String priceCurrency = "USD";
+        /** Per-HTTP-attempt read timeout. */
         private int timeoutSeconds = 45;
+        private int connectTimeoutSeconds = 10;
+        /**
+         * Hard deadline for one {@code complete(...)} call, covering every
+         * attempt, JSON-mode fallback and retry backoff. The lower-level read
+         * timeout only bounds a single HTTP attempt.
+         */
+        private int totalTimeoutSeconds = 60;
+        private int maxRetries = 2;
+        private long retryBackoffMs = 800;
+        /**
+         * After a gateway rejects {@code response_format}, JSON mode is skipped
+         * for this long and then re-probed. It is never disabled permanently.
+         */
+        private int jsonModeProbeTtlSeconds = 600;
+        /**
+         * Ask the provider for a JSON object response when supported. If the
+         * gateway rejects response_format, the client falls back to plain text
+         * with the robust parser instead of failing the query.
+         */
+        private boolean jsonMode = true;
+        /** Total prompt character budget (system + user), estimated before sending. */
+        private int maxPromptChars = 28_000;
+        /** Cap for the schema/few-shot section inside the system prompt. */
+        private int maxSchemaChars = 16_000;
+        /** Cap for the conversation-history section inside the user prompt. */
+        private int maxHistoryChars = 2_000;
+        private int maxHistoryTurns = 3;
+        /** Cap for a single user question after sanitisation. */
+        private int maxQuestionChars = 2_000;
         /**
          * When AI is enabled but generation fails, falling back to the rule
          * engine must be an explicit opt-in. The default is fail-closed: the
          * user sees an ERROR instead of a plausible-looking wrong answer.
          */
         private boolean allowDemoFallback = false;
+
+        public boolean costConfigured() {
+            return inputCostPerMillion != null && outputCostPerMillion != null
+                    && (inputCostPerMillion.signum() > 0 || outputCostPerMillion.signum() > 0);
+        }
     }
 
     @Data
@@ -124,5 +166,18 @@ public class ChatBiProperties {
         private int maxMetrics = 6;
         private int maxExamples = 4;
         private int cacheTtlSeconds = 300;
+    }
+
+    /**
+     * The verified gateway does not expose an embedding endpoint, so the only
+     * implemented provider is the deterministic character-hashing model. These
+     * knobs exist to make the seam explicit and to fail fast on a provider
+     * switch that would need a schema migration.
+     */
+    @Data
+    public static class Embedding {
+        private String provider = "hash";
+        private int dimensions = 512;
+        private String model = "";
     }
 }

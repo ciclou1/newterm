@@ -1,5 +1,7 @@
 package com.chatbi.linking;
 
+import com.chatbi.config.ChatBiProperties;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -11,7 +13,13 @@ import java.util.Map;
  * n-gram feature hashing. It keeps the demo fully offline while preserving a
  * clean seam: replace this bean with a Spring AI EmbeddingModel-backed
  * implementation to use a hosted embedding model.
+ *
+ * <p>These are <strong>lexical</strong> feature-hash vectors, not semantic
+ * embeddings: two paraphrases only score highly when they share characters.
+ * The verified deepseek gateway did not expose {@code /v1/embeddings}, which is
+ * why the hash provider remains the default.</p>
  */
+@Slf4j
 @Component
 public class HashingEmbeddingModel {
 
@@ -19,8 +27,21 @@ public class HashingEmbeddingModel {
 
     private final TextTokenizer tokenizer;
 
-    public HashingEmbeddingModel(TextTokenizer tokenizer) {
+    public HashingEmbeddingModel(TextTokenizer tokenizer, ChatBiProperties properties) {
         this.tokenizer = tokenizer;
+        ChatBiProperties.Embedding embedding = properties.getEmbedding();
+        if (!"hash".equalsIgnoreCase(embedding.getProvider())) {
+            throw new IllegalStateException("chatbi.embedding.provider=" + embedding.getProvider()
+                    + " 尚未实现：当前只有 hash provider。若改用远程 embedding，请实现 "
+                    + "EmbeddingModel 适配器并补充向量维度迁移。");
+        }
+        if (embedding.getDimensions() != DIMENSIONS) {
+            throw new IllegalStateException("chatbi.embedding.dimensions=" + embedding.getDimensions()
+                    + " 与数据库 vector(" + DIMENSIONS + ") 不一致。修改维度需要新增 Flyway 迁移，"
+                    + "重建 semantic_embedding.embedding 列并全量重建索引。");
+        }
+        log.info("Embedding provider=hash dimensions={} (lexical feature hashing, not a semantic model)",
+                DIMENSIONS);
     }
 
     public float[] embed(String text) {

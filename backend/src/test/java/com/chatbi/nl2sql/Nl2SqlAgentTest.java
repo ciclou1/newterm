@@ -181,6 +181,42 @@ class Nl2SqlAgentTest {
         assertThat(result.degraded()).isFalse();
     }
 
+    @Test
+    void computesUsageCostFromConfiguredPrices() {
+        properties.getAi().setInputCostPerMillion(new BigDecimal("1.00"));
+        properties.getAi().setOutputCostPerMillion(new BigDecimal("2.00"));
+        when(aiGenerator.available()).thenReturn(true);
+        when(aiGenerator.generate(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SqlGeneration(GOOD_SQL, "说明", 0.9, null, "AI",
+                        1_000_000, 500_000, "deepseek-flash", null));
+        when(guardService.guard(anyString(), any())).thenReturn(passed(GOOD_SQL));
+        when(explainCostService.explain(GOOD_SQL)).thenReturn(explainOk());
+        when(queryExecutor.execute(GOOD_SQL)).thenReturn(rows());
+
+        AgentResult result = agent.ask("今年各区域销售额", user(), List.of());
+
+        // 1M input tokens * 1.00 + 0.5M output tokens * 2.00 = 2.00
+        assertThat(result.usage().promptTokens()).isEqualTo(1_000_000);
+        assertThat(result.usage().completionTokens()).isEqualTo(500_000);
+        assertThat(result.usage().costUsd()).isEqualByComparingTo("2.000000");
+    }
+
+    @Test
+    void reportsZeroCostWhenPricesAreNotConfigured() {
+        when(aiGenerator.available()).thenReturn(true);
+        when(aiGenerator.generate(any(), any(), any(), any(), any(), any()))
+                .thenReturn(sql(GOOD_SQL));
+        when(guardService.guard(anyString(), any())).thenReturn(passed(GOOD_SQL));
+        when(explainCostService.explain(GOOD_SQL)).thenReturn(explainOk());
+        when(queryExecutor.execute(GOOD_SQL)).thenReturn(rows());
+
+        AgentResult result = agent.ask("今年各区域销售额", user(), List.of());
+
+        assertThat(result.usage().promptTokens()).isEqualTo(100);
+        assertThat(result.usage().costUsd()).isEqualByComparingTo("0");
+        assertThat(properties.getAi().costConfigured()).isFalse();
+    }
+
     private SchemaContext schema() {
         return new SchemaContext(List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), "", 1);
