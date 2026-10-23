@@ -1,0 +1,30 @@
+# Build output
+target/
+dist/
+node_modules/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Local runtime
+.env
+*.log
+logs/
+.DS_Store
+Thumbs.db
+
+# AO / local tools
+.tools/
+.ao/
+
+# Personal files (resumes, local Claude settings)
+*.docx
+.claude/settings.local.json

@@ -1,0 +1,89 @@
+name: chatbi
+
+# AO session ownership labels: the demo stack is durable substrate, so it is
+# marked spare and is never auto-reaped with a single session.
+x-ao-labels: &ao-labels
+  ao.session: "${AO_SESSION_ID:-standalone-1}"
+  ao.spare: "true"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chatbi-postgres
+    labels: *ao-labels
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chatbi}
+      POSTGRES_USER: ${POSTGRES_USER:-chatbi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatbi}
+      TZ: Asia/Shanghai
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - chatbi-pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chatbi} -d ${POSTGRES_DB:-chatbi}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: chatbi-redis
+    labels: *ao-labels
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - chatbi-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: chatbi-backend
+    labels: *ao-labels
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      CHATBI_AI_ENABLED: ${CHATBI_AI_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHATBI_AI_BASE_URL: ${CHATBI_AI_BASE_URL:-https://api.openai.com}
+      CHATBI_AI_MODEL: ${CHATBI_AI_MODEL:-gpt-4.1-mini}
+      CHATBI_READONLY_DB_PASSWORD: ${CHATBI_READONLY_DB_PASSWORD:-chatbi_ro}
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: chatbi-frontend
+    labels: *ao-labels
+    ports:
+      - "8088:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chatbi-pgdata:
+  chatbi-redisdata:

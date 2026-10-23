@@ -1,0 +1,1316 @@
+{
+  "version": "1.0",
+  "description": "ChatBI 执行准确率评测集：120 题，覆盖 6 个语义主题、时间口径、分组、TopN、多指标与澄清。",
+  "questions": [
+    {
+      "category": "sales",
+      "difficulty": "easy",
+      "question": "今年销售额是多少",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 1
+    },
+    {
+      "category": "sales",
+      "difficulty": "easy",
+      "question": "去年销售额是多少",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year' AND order_date < date_trunc('year', CURRENT_DATE))",
+      "id": 2
+    },
+    {
+      "category": "sales",
+      "difficulty": "easy",
+      "question": "2025年销售额是多少",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01')",
+      "id": 3
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "2025年1月销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2025-02-01')",
+      "id": 4
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "2025年第一季度销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2025-04-01')",
+      "id": 5
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "近6个月销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= CURRENT_DATE - INTERVAL '6 months')",
+      "id": 6
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "近30天销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= CURRENT_DATE - INTERVAL '30 days')",
+      "id": 7
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "本月销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('month', CURRENT_DATE))",
+      "id": 8
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "上月销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month' AND order_date < date_trunc('month', CURRENT_DATE))",
+      "id": 9
+    },
+    {
+      "category": "sales",
+      "difficulty": "easy",
+      "question": "今年订单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT COUNT(DISTINCT order_id) FILTER (WHERE status = 'COMPLETED') AS order_count FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 10
+    },
+    {
+      "category": "sales",
+      "difficulty": "easy",
+      "question": "去年订单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT COUNT(DISTINCT order_id) FILTER (WHERE status = 'COMPLETED') AS order_count FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year' AND order_date < date_trunc('year', CURRENT_DATE))",
+      "id": 11
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "今年客单价",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(amount) FILTER (WHERE status = 'COMPLETED') / NULLIF(COUNT(DISTINCT order_id) FILTER (WHERE status = 'COMPLETED'), 0), 2) AS avg_order_value FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 12
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "今年销量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(quantity) FILTER (WHERE status = 'COMPLETED') AS sales_quantity FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 13
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "今年毛利",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(gross_profit) FILTER (WHERE status = 'COMPLETED') AS gross_profit FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 14
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "今年毛利率",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT ROUND(100.0 * SUM(gross_profit) FILTER (WHERE status = 'COMPLETED') / NULLIF(SUM(amount) FILTER (WHERE status = 'COMPLETED'), 0), 2) AS gross_margin FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 15
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "今年成交客户数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT COUNT(DISTINCT customer_id) FILTER (WHERE status = 'COMPLETED') AS active_customers FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 16
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各区域销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 17
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各产品类别销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT category, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY category",
+      "id": 18
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各销售部门销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT department_name, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY department_name",
+      "id": 19
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各销售员销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT salesperson, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY salesperson",
+      "id": 20
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各客户等级销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT customer_level, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY customer_level",
+      "id": 21
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各行业销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT industry, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY industry",
+      "id": 22
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年月度销售额趋势",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT order_month, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY order_month",
+      "id": 23
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各月销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT order_month, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY order_month",
+      "id": 24
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "2025年各区域销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01') GROUP BY region",
+      "id": 25
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "华东区今年销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) AND region = '华东'",
+      "id": 26
+    },
+    {
+      "category": "sales",
+      "difficulty": "medium",
+      "question": "华南区今年销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) AND region = '华南'",
+      "id": 27
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "华东和华南今年销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) AND region IN ('华东', '华南')",
+      "id": 28
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年销售额最高的5个客户",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT customer_name, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY customer_name ORDER BY sales_amount DESC LIMIT 5",
+      "id": 29
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年销售额最低的5个产品",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT product_name, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY product_name ORDER BY sales_amount ASC LIMIT 5",
+      "id": 30
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年销售额最高的10个销售员",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT salesperson, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY salesperson ORDER BY sales_amount DESC LIMIT 10",
+      "id": 31
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各区域毛利率",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT region, ROUND(100.0 * SUM(gross_profit) FILTER (WHERE status = 'COMPLETED') / NULLIF(SUM(amount) FILTER (WHERE status = 'COMPLETED'), 0), 2) AS gross_margin FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 32
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "华东区今年各产品类别销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT category, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) AND region = '华东' GROUP BY category",
+      "id": 33
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各产品销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT product_name, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY product_name",
+      "id": 34
+    },
+    {
+      "category": "sales",
+      "difficulty": "hard",
+      "question": "今年各客户销售额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT customer_name, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY customer_name",
+      "id": 35
+    },
+    {
+      "category": "purchase",
+      "difficulty": "easy",
+      "question": "今年采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 36
+    },
+    {
+      "category": "purchase",
+      "difficulty": "easy",
+      "question": "去年采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year' AND order_date < date_trunc('year', CURRENT_DATE))",
+      "id": 37
+    },
+    {
+      "category": "purchase",
+      "difficulty": "easy",
+      "question": "2025年采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01')",
+      "id": 38
+    },
+    {
+      "category": "purchase",
+      "difficulty": "easy",
+      "question": "今年采购单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT COUNT(DISTINCT po_id) FILTER (WHERE status <> 'CANCELLED') AS purchase_order_count FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 39
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各供应商采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_name, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_name",
+      "id": 40
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各供应商类别采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_category, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_category",
+      "id": 41
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各区域采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 42
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各采购部门采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT department_name, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY department_name",
+      "id": 43
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年月度采购金额趋势",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT order_month, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY order_month",
+      "id": 44
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年采购金额最高的5个供应商",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_name, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_name ORDER BY purchase_amount DESC LIMIT 5",
+      "id": 45
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各产品类别采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT category, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY category",
+      "id": 46
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "2025年各区域采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01') GROUP BY region",
+      "id": 47
+    },
+    {
+      "category": "purchase",
+      "difficulty": "medium",
+      "question": "华东区今年采购金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) AND region = '华东'",
+      "id": 48
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年各供应商采购单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_name, COUNT(DISTINCT po_id) FILTER (WHERE status <> 'CANCELLED') AS purchase_order_count FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_name",
+      "id": 49
+    },
+    {
+      "category": "purchase",
+      "difficulty": "hard",
+      "question": "今年采购金额最低的5个供应商",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_name, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_name ORDER BY purchase_amount ASC LIMIT 5",
+      "id": 50
+    },
+    {
+      "category": "inventory",
+      "difficulty": "easy",
+      "question": "当前库存量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot",
+      "id": 51
+    },
+    {
+      "category": "inventory",
+      "difficulty": "easy",
+      "question": "当前库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot",
+      "id": 52
+    },
+    {
+      "category": "inventory",
+      "difficulty": "easy",
+      "question": "当前缺货风险数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT COUNT(*) FILTER (WHERE quantity < safety_stock) AS stockout_risk_count FROM v_inventory_snapshot",
+      "id": 53
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各仓库库存量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot GROUP BY warehouse_name",
+      "id": 54
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各仓库库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY warehouse_name",
+      "id": 55
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各产品类别库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT category, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY category",
+      "id": 56
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各产品类别库存量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT category, SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot GROUP BY category",
+      "id": 57
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各仓库缺货风险数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, COUNT(*) FILTER (WHERE quantity < safety_stock) AS stockout_risk_count FROM v_inventory_snapshot GROUP BY warehouse_name",
+      "id": 58
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "库存金额最高的5个仓库",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY warehouse_name ORDER BY inventory_value DESC LIMIT 5",
+      "id": 59
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "库存量最低的5个产品",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT product_name, SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot GROUP BY product_name ORDER BY inventory_quantity ASC LIMIT 5",
+      "id": 60
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各产品库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT product_name, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY product_name",
+      "id": 61
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各仓库各产品类别库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, category, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY warehouse_name, category",
+      "id": 62
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "当前各仓库库存量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot GROUP BY warehouse_name",
+      "id": 63
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "库存量最高的10个产品",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT product_name, SUM(quantity) AS inventory_quantity FROM v_inventory_snapshot GROUP BY product_name ORDER BY inventory_quantity DESC LIMIT 10",
+      "id": 64
+    },
+    {
+      "category": "inventory",
+      "difficulty": "hard",
+      "question": "各区域库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT region, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY region",
+      "id": 65
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "easy",
+      "question": "今年维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 66
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "easy",
+      "question": "去年维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year' AND planned_date < date_trunc('year', CURRENT_DATE))",
+      "id": 67
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "easy",
+      "question": "2025年维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= DATE '2025-01-01' AND planned_date < DATE '2026-01-01')",
+      "id": 68
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "easy",
+      "question": "今年维修工单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT COUNT(*) AS maintenance_count FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 69
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "medium",
+      "question": "今年平均维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT ROUND(AVG(cost), 2) AS avg_maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 70
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "medium",
+      "question": "今年停机时长",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(downtime_hours) AS downtime_hours FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 71
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各区域维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 72
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各设备类别维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT equipment_category, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY equipment_category",
+      "id": 73
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各维修类型维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT maintenance_type, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY maintenance_type",
+      "id": 74
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各维修人员维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT technician, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY technician",
+      "id": 75
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年月度维修成本趋势",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT planned_month, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY planned_month",
+      "id": 76
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年维修成本最高的5个设备",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT equipment_name, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY equipment_name ORDER BY maintenance_cost DESC LIMIT 5",
+      "id": 77
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各设备类别维修工单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT equipment_category, COUNT(*) AS maintenance_count FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY equipment_category",
+      "id": 78
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各维修类型工单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT maintenance_type, COUNT(*) AS maintenance_count FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY maintenance_type",
+      "id": 79
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各区域停机时长",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(downtime_hours) AS downtime_hours FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 80
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "medium",
+      "question": "华东区今年维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) AND region = '华东'",
+      "id": 81
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年维修成本最低的5个维修人员",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT technician, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY technician ORDER BY maintenance_cost ASC LIMIT 5",
+      "id": 82
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "2025年各设备类别维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT equipment_category, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= DATE '2025-01-01' AND planned_date < DATE '2026-01-01') GROUP BY equipment_category",
+      "id": 83
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "medium",
+      "question": "近6个月维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= CURRENT_DATE - INTERVAL '6 months')",
+      "id": 84
+    },
+    {
+      "category": "maintenance",
+      "difficulty": "hard",
+      "question": "今年各关键等级维修成本",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_maintenance_fact"
+      ],
+      "goldenSql": "SELECT criticality, SUM(cost) AS maintenance_cost FROM v_maintenance_fact WHERE (planned_date >= date_trunc('year', CURRENT_DATE)) GROUP BY criticality",
+      "id": 85
+    },
+    {
+      "category": "receivable",
+      "difficulty": "easy",
+      "question": "当前应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact",
+      "id": 86
+    },
+    {
+      "category": "receivable",
+      "difficulty": "easy",
+      "question": "当前逾期应收",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(balance) FILTER (WHERE status = 'OVERDUE'), 2) AS overdue_receivable FROM v_receivable_fact",
+      "id": 87
+    },
+    {
+      "category": "receivable",
+      "difficulty": "easy",
+      "question": "当前开票金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(amount), 2) AS invoice_amount FROM v_receivable_fact",
+      "id": 88
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各区域应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT region, ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact GROUP BY region",
+      "id": 89
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各行业应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT industry, ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact GROUP BY industry",
+      "id": 90
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各客户应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT customer_name, ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact GROUP BY customer_name",
+      "id": 91
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各区域逾期应收",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT region, ROUND(SUM(balance) FILTER (WHERE status = 'OVERDUE'), 2) AS overdue_receivable FROM v_receivable_fact GROUP BY region",
+      "id": 92
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "应收余额最高的5个客户",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT customer_name, ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact GROUP BY customer_name ORDER BY receivable_balance DESC LIMIT 5",
+      "id": 93
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "逾期应收最高的10个客户",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT customer_name, ROUND(SUM(balance) FILTER (WHERE status = 'OVERDUE'), 2) AS overdue_receivable FROM v_receivable_fact GROUP BY customer_name ORDER BY overdue_receivable DESC LIMIT 10",
+      "id": 94
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各区域开票金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT region, ROUND(SUM(amount), 2) AS invoice_amount FROM v_receivable_fact GROUP BY region",
+      "id": 95
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "2025年各区域应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT region, ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact WHERE (invoice_date >= DATE '2025-01-01' AND invoice_date < DATE '2026-01-01') GROUP BY region",
+      "id": 96
+    },
+    {
+      "category": "receivable",
+      "difficulty": "medium",
+      "question": "华东区应收余额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(balance), 2) AS receivable_balance FROM v_receivable_fact WHERE region = '华东'",
+      "id": 97
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "今年各月开票金额趋势",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT invoice_month, ROUND(SUM(amount), 2) AS invoice_amount FROM v_receivable_fact WHERE (invoice_date >= date_trunc('year', CURRENT_DATE)) GROUP BY invoice_month",
+      "id": 98
+    },
+    {
+      "category": "receivable",
+      "difficulty": "medium",
+      "question": "近6个月开票金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT ROUND(SUM(amount), 2) AS invoice_amount FROM v_receivable_fact WHERE (invoice_date >= CURRENT_DATE - INTERVAL '6 months')",
+      "id": 99
+    },
+    {
+      "category": "receivable",
+      "difficulty": "hard",
+      "question": "各客户逾期应收",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_receivable_fact"
+      ],
+      "goldenSql": "SELECT customer_name, ROUND(SUM(balance) FILTER (WHERE status = 'OVERDUE'), 2) AS overdue_receivable FROM v_receivable_fact GROUP BY customer_name",
+      "id": 100
+    },
+    {
+      "category": "equipment",
+      "difficulty": "easy",
+      "question": "当前设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT COUNT(*) AS equipment_count FROM v_equipment_dim",
+      "id": 101
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "各设备类别设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT category, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY category",
+      "id": 102
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "各区域设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT region, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY region",
+      "id": 103
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "各仓库设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT warehouse_name, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY warehouse_name",
+      "id": 104
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "各关键等级设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT criticality, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY criticality",
+      "id": 105
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "各状态设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT status, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY status",
+      "id": 106
+    },
+    {
+      "category": "equipment",
+      "difficulty": "medium",
+      "question": "今年新增设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT COUNT(*) AS equipment_count FROM v_equipment_dim WHERE (purchase_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 107
+    },
+    {
+      "category": "equipment",
+      "difficulty": "medium",
+      "question": "2025年新增设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT COUNT(*) AS equipment_count FROM v_equipment_dim WHERE (purchase_date >= DATE '2025-01-01' AND purchase_date < DATE '2026-01-01')",
+      "id": 108
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "今年各设备类别新增设备数量",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT category, COUNT(*) AS equipment_count FROM v_equipment_dim WHERE (purchase_date >= date_trunc('year', CURRENT_DATE)) GROUP BY category",
+      "id": 109
+    },
+    {
+      "category": "equipment",
+      "difficulty": "hard",
+      "question": "设备数量最多的5个仓库",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_equipment_dim"
+      ],
+      "goldenSql": "SELECT warehouse_name, COUNT(*) AS equipment_count FROM v_equipment_dim GROUP BY warehouse_name ORDER BY equipment_count DESC LIMIT 5",
+      "id": 110
+    },
+    {
+      "category": "clarification",
+      "difficulty": "medium",
+      "question": "帮我看看数据",
+      "expectedStatus": "CLARIFY",
+      "tables": [],
+      "goldenSql": null,
+      "id": 111
+    },
+    {
+      "category": "clarification",
+      "difficulty": "medium",
+      "question": "最近情况怎么样",
+      "expectedStatus": "CLARIFY",
+      "tables": [],
+      "goldenSql": null,
+      "id": 112
+    },
+    {
+      "category": "clarification",
+      "difficulty": "medium",
+      "question": "销售额和维修成本分别是多少",
+      "expectedStatus": "CLARIFY",
+      "tables": [],
+      "goldenSql": null,
+      "id": 113
+    },
+    {
+      "category": "clarification",
+      "difficulty": "medium",
+      "question": "同比变化怎么样",
+      "expectedStatus": "CLARIFY",
+      "tables": [],
+      "goldenSql": null,
+      "id": 114
+    },
+    {
+      "category": "clarification",
+      "difficulty": "medium",
+      "question": "哪些客户表现最好",
+      "expectedStatus": "CLARIFY",
+      "tables": [],
+      "goldenSql": null,
+      "id": 115
+    },
+    {
+      "category": "multi_metric",
+      "difficulty": "hard",
+      "question": "今年销售额和订单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount, COUNT(DISTINCT order_id) FILTER (WHERE status = 'COMPLETED') AS order_count FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 116
+    },
+    {
+      "category": "multi_metric",
+      "difficulty": "hard",
+      "question": "今年销售额和毛利",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount, SUM(gross_profit) FILTER (WHERE status = 'COMPLETED') AS gross_profit FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE))",
+      "id": 117
+    },
+    {
+      "category": "multi_metric",
+      "difficulty": "hard",
+      "question": "今年各区域销售额和订单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_sales_fact"
+      ],
+      "goldenSql": "SELECT region, SUM(amount) FILTER (WHERE status = 'COMPLETED') AS sales_amount, COUNT(DISTINCT order_id) FILTER (WHERE status = 'COMPLETED') AS order_count FROM v_sales_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY region",
+      "id": 118
+    },
+    {
+      "category": "multi_metric",
+      "difficulty": "hard",
+      "question": "今年各供应商采购金额和采购单数",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_purchase_fact"
+      ],
+      "goldenSql": "SELECT supplier_name, SUM(amount) FILTER (WHERE status <> 'CANCELLED') AS purchase_amount, COUNT(DISTINCT po_id) FILTER (WHERE status <> 'CANCELLED') AS purchase_order_count FROM v_purchase_fact WHERE (order_date >= date_trunc('year', CURRENT_DATE)) GROUP BY supplier_name",
+      "id": 119
+    },
+    {
+      "category": "multi_metric",
+      "difficulty": "hard",
+      "question": "今年各仓库库存量和库存金额",
+      "expectedStatus": "OK",
+      "tables": [
+        "v_inventory_snapshot"
+      ],
+      "goldenSql": "SELECT warehouse_name, SUM(quantity) AS inventory_quantity, ROUND(SUM(inventory_value), 2) AS inventory_value FROM v_inventory_snapshot GROUP BY warehouse_name",
+      "id": 120
+    }
+  ]
+}
