@@ -1,5 +1,6 @@
 package com.chatbi.nl2sql;
 
+import com.chatbi.common.SecretRedactor;
 import com.chatbi.config.ChatBiProperties;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.linking.SchemaContext;
@@ -69,8 +70,11 @@ public class AiSqlGenerator {
             LlmResponse response = client.complete(prompt.system(), prompt.user());
             return LlmOutputParser.parse(response.text(), response, objectMapper);
         } catch (Exception e) {
+            String message = e instanceof SpringAiLlmClient.LlmTimeoutException
+                    ? shortMessage(e)
+                    : "模型调用失败：" + shortMessage(e);
             log.warn("LLM call failed: {}", shortMessage(e));
-            return SqlGeneration.error("模型调用失败：" + shortMessage(e), "AI", 0, 0, null);
+            return SqlGeneration.error(message, "AI", 0, 0, null);
         }
     }
 
@@ -81,6 +85,7 @@ public class AiSqlGenerator {
         }
         int newline = message.indexOf('\n');
         String single = newline > 0 ? message.substring(0, newline) : message;
-        return single.length() > 300 ? single.substring(0, 300) + "…" : single;
+        String redacted = SecretRedactor.redact(single);
+        return redacted.length() > 300 ? redacted.substring(0, 300) + "…" : redacted;
     }
 }

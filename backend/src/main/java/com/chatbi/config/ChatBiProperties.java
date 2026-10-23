@@ -33,10 +33,22 @@ public class ChatBiProperties {
         private BigDecimal inputCostPerMillion = BigDecimal.ZERO;
         private BigDecimal outputCostPerMillion = BigDecimal.ZERO;
         private String priceCurrency = "USD";
+        /** Per-HTTP-attempt read timeout. */
         private int timeoutSeconds = 45;
         private int connectTimeoutSeconds = 10;
+        /**
+         * Hard deadline for one {@code complete(...)} call, covering every
+         * attempt, JSON-mode fallback and retry backoff. The lower-level read
+         * timeout only bounds a single HTTP attempt.
+         */
+        private int totalTimeoutSeconds = 60;
         private int maxRetries = 2;
         private long retryBackoffMs = 800;
+        /**
+         * After a gateway rejects {@code response_format}, JSON mode is skipped
+         * for this long and then re-probed. It is never disabled permanently.
+         */
+        private int jsonModeProbeTtlSeconds = 600;
         /**
          * Ask the provider for a JSON object response when supported. If the
          * gateway rejects response_format, the client falls back to plain text

@@ -115,9 +115,15 @@ chatbi:
     price-currency: ${CHATBI_AI_PRICE_CURRENCY:USD}
     timeout-seconds: ${CHATBI_AI_TIMEOUT_SECONDS:45}
     connect-timeout-seconds: ${CHATBI_AI_CONNECT_TIMEOUT_SECONDS:10}
+    # Hard budget for one completion, covering every HTTP attempt, backoff and
+    # the JSON-mode fallback. The read timeout above bounds a single attempt.
+    total-timeout-seconds: ${CHATBI_AI_TOTAL_TIMEOUT_SECONDS:60}
     max-retries: ${CHATBI_AI_MAX_RETRIES:2}
     retry-backoff-ms: ${CHATBI_AI_RETRY_BACKOFF_MS:800}
     json-mode: ${CHATBI_AI_JSON_MODE:true}
+    # After an explicit response_format rejection JSON mode is paused for this
+    # long, then re-probed. It is never disabled permanently.
+    json-mode-probe-ttl-seconds: ${CHATBI_AI_JSON_MODE_PROBE_TTL_SECONDS:600}
     max-prompt-chars: ${CHATBI_AI_MAX_PROMPT_CHARS:28000}
     max-schema-chars: ${CHATBI_AI_MAX_SCHEMA_CHARS:16000}
     max-history-chars: ${CHATBI_AI_MAX_HISTORY_CHARS:2000}

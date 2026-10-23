@@ -56,6 +56,8 @@ public class AiHealthIndicator implements HealthIndicator {
         details.put("jsonMode", ai.isJsonMode());
         details.put("maxRetries", ai.getMaxRetries());
         details.put("timeoutSeconds", ai.getTimeoutSeconds());
+        details.put("totalTimeoutSeconds", ai.getTotalTimeoutSeconds());
+        details.put("jsonModeProbeTtlSeconds", ai.getJsonModeProbeTtlSeconds());
         details.put("costConfigured", ai.costConfigured());
         SpringAiLlmClient wired = client.getIfAvailable();
         details.put("clientAvailable", wired != null);
@@ -67,6 +69,7 @@ public class AiHealthIndicator implements HealthIndicator {
             details.put("failures", stats.failures());
             details.put("retries", stats.retries());
             details.put("jsonFallbacks", stats.jsonFallbacks());
+            details.put("httpAttempts", stats.httpAttempts());
             details.put("lastModel", stats.lastModel());
             details.put("lastElapsedMs", stats.lastElapsedMs());
             details.put("lastPromptTokens", stats.lastPromptTokens());

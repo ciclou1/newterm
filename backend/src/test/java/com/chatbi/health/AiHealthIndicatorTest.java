@@ -53,7 +53,7 @@ class AiHealthIndicatorTest {
         SpringAiLlmClient client = mock(SpringAiLlmClient.class);
         when(provider.getIfAvailable()).thenReturn(client);
         when(client.stats()).thenReturn(new SpringAiLlmClient.Stats(true, "deepseek-flash",
-                "https://gateway.example", true, 4, 3, 1, 2, 0, "deepseek-flash",
+                "https://gateway.example", true, 4, 3, 1, 2, 0, 5, "deepseek-flash",
                 "503 Service Unavailable", 1200, 900, 40));
         AiHealthIndicator indicator = new AiHealthIndicator(properties, provider);
 
@@ -63,7 +63,8 @@ class AiHealthIndicatorTest {
         assertThat(health.getStatus()).isEqualTo(Status.UP);
         assertThat(details).contains("deepseek-flash")
                 .contains("503 Service Unavailable")
-                .contains("retries=2");
+                .contains("retries=2")
+                .contains("httpAttempts=5");
         assertThat(details).doesNotContain("sk-must-never-appear");
     }
 }

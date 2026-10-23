@@ -115,7 +115,7 @@ npm run dev
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 81 个单元测试
+./mvnw -pl backend test                 # 93 个单元测试
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
@@ -200,6 +200,9 @@ Schema Linking 流程：
 - 结构违规（CTE/子查询/UNION、未知表/字段、语法错误）进入有界修复循环，并附带明确的结构纠错提示（改写为单层 SELECT + GROUP BY/HAVING）。
 - 写操作、危险函数、系统 schema、多语句、`SELECT INTO`、锁定读、行级权限拒绝属于硬策略，直接返回 `BLOCKED`，不交给模型重试。
 - AI 已启用但生成失败时默认返回 `ERROR`，不静默切换规则引擎；只有 `CHATBI_AI_ALLOW_DEMO_FALLBACK=true` 才允许降级，响应会带 `degraded=true` 与原因。
+- LLM 重试只有一个 owner（`SpringAiLlmClient`）；Spring AI 内部 `RetryTemplate` 固定为单次尝试。每次完成受 `CHATBI_AI_TOTAL_TIMEOUT_SECONDS`（默认 60s）硬约束，超时中断底层 HTTP 并返回 `AI_TIMEOUT`。
+- JSON mode 仅在网关错误文本明确提及 `response_format`/`json_object` 时回退；其余 400/404/422 按真实错误处理。回退后按 TTL 重新探测，不会永久关闭。
+- 网关错误进入健康检查、审计与用户可见消息前，统一脱敏 `sk-*` 与 `Bearer *`。
 - 修复提示包含数据库原始错误、当前 Schema 与上一次 SQL；达到重试上限后返回 `ERROR`，并保留失败阶段与信息。
 - 多轮对话会继承上一轮的时间口径、过滤条件与主题；“那去年呢”只改时间，“那订单数呢”保留其余条件。
 
@@ -317,6 +320,7 @@ Prometheus 指标前缀为 `chatbi`：
 - `chatbi_tokens{kind}`：Prompt / Completion Token
 - `chatbi_cost_usd{mode}`：按配置单价估算的成本（未配置单价时为 0）
 - `chatbi_llm_calls_total{model,outcome}`：LLM 调用成功/失败
+- `chatbi_llm_http_attempts_total{model}`：实际 HTTP 尝试次数（内部重试固定为 1 次，重试只在外层）
 - `chatbi_llm_request_duration_seconds{model,outcome}`：LLM 单次请求延迟
 - `chatbi_llm_tokens_total{model,kind}`：LLM Prompt / Completion Token
 - `chatbi_sql_blocked_total{code}`：安全拦截分类
@@ -324,7 +328,7 @@ Prometheus 指标前缀为 `chatbi`：
 
 AI 诊断：
 
-- `GET /actuator/health` 的 `ai` 组件：`mode`、`model`、`baseUrl`、`clientAvailable`、`jsonModeSupported`、调用/失败/重试次数、最近一次错误与 Token。
+- `GET /actuator/health` 的 `ai` 组件：`mode`、`model`、`baseUrl`、`clientAvailable`、`jsonModeSupported`、`totalTimeoutSeconds`、调用/失败/重试/实际 HTTP 尝试次数、最近一次错误与 Token；错误文本中的 `sk-*` 与 `Bearer *` 会被脱敏。
 - `GET /api/health/ai`：同一份快照，便于脚本与告警查询；两者都不包含 API Key。
 
 审计表 `query_audit` 保存每次请求的问题、生成 SQL、最终 SQL、状态、失败阶段、尝试次数、行数、耗时、Token、成本与 Schema 命中；用户可对查询提交反馈（`POST /api/feedback`）。
@@ -406,10 +410,12 @@ npx -y supergateway \
 | `CHATBI_AI_MODEL` | `gpt-4.1-mini` | 模型名称 |
 | `CHATBI_AI_TEMPERATURE` | `0.1` | 采样温度 |
 | `CHATBI_AI_MAX_TOKENS` | `1400` | 单次输出上限（含推理模型的 reasoning token） |
-| `CHATBI_AI_JSON_MODE` | `true` | 请求 `response_format=json_object`；网关拒绝时自动回退纯文本解析 |
-| `CHATBI_AI_TIMEOUT_SECONDS` | `45` | 读超时 |
+| `CHATBI_AI_JSON_MODE` | `true` | 请求 `response_format=json_object`；仅当错误文本明确含 `response_format`/`json_object` 时回退 |
+| `CHATBI_AI_TIMEOUT_SECONDS` | `45` | 单次 HTTP 读超时 |
+| `CHATBI_AI_TOTAL_TIMEOUT_SECONDS` | `60` | 单次完成的硬 deadline，覆盖全部尝试、退避与 JSON 回退；超时返回 `AI_TIMEOUT` |
 | `CHATBI_AI_CONNECT_TIMEOUT_SECONDS` | `10` | 连接超时 |
-| `CHATBI_AI_MAX_RETRIES` | `2` | 429/5xx/超时的最大重试次数（指数退避） |
+| `CHATBI_AI_MAX_RETRIES` | `2` | 429/5xx/超时的最大外层重试次数（指数退避；内部重试固定 1 次） |
+| `CHATBI_AI_JSON_MODE_PROBE_TTL_SECONDS` | `600` | 网关拒绝 JSON mode 后暂停该时长再重新探测，不会永久关闭 |
 | `CHATBI_AI_RETRY_BACKOFF_MS` | `800` | 首次重试退避基数 |
 | `CHATBI_AI_MAX_PROMPT_CHARS` | `28000` | system + user 总字符预算（估算，非计费） |
 | `CHATBI_AI_MAX_SCHEMA_CHARS` | `16000` | Schema/Few-shot 段预算，超限时优先丢弃示例 |
