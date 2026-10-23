@@ -30,16 +30,23 @@ public final class ChatBiMcpServer {
     private final PrintWriter out = new PrintWriter(
             new OutputStreamWriter(System.out, StandardCharsets.UTF_8), true);
     private final String apiBase = System.getenv().getOrDefault("CHATBI_API_URL", "http://localhost:8080");
-    private final String defaultUser = System.getenv().getOrDefault("CHATBI_MCP_USER", "zhangsan");
+    private final String serviceToken = System.getenv().getOrDefault("CHATBI_MCP_SERVICE_TOKEN", "");
+    private final String serviceUser = System.getenv().getOrDefault("CHATBI_MCP_SERVICE_USER", "mcp-service");
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10)).build();
 
     public static void main(String[] args) throws Exception {
-        new ChatBiMcpServer().run();
+        ChatBiMcpServer server = new ChatBiMcpServer();
+        if (server.serviceToken.isBlank()) {
+            server.log("FATAL: CHATBI_MCP_SERVICE_TOKEN is required. "
+                    + "Set it to the same value configured on the ChatBI backend.");
+            System.exit(2);
+        }
+        server.run();
     }
 
     private void run() throws Exception {
-        log("ChatBI MCP server started; backend=" + apiBase + ", defaultUser=" + defaultUser);
+        log("ChatBI MCP server started; backend=" + apiBase + ", serviceUser=" + serviceUser);
         BufferedReader reader = new BufferedReader(
                 new InputStreamReader(System.in, StandardCharsets.UTF_8));
         String line;
@@ -104,8 +111,6 @@ public final class ChatBiMcpServer {
         ObjectNode properties = schema.putObject("properties");
         properties.putObject("question").put("type", "string")
                 .put("description", "自然语言问题，例如：今年各区域销售额");
-        properties.putObject("user").put("type", "string")
-                .put("description", "演示用户，zhangsan（华东销售）/ wangwu（华南销售）/ lisi（管理员）");
         properties.putObject("conversationId").put("type", "string")
                 .put("description", "可选，多轮追问时传上一次返回的会话 ID");
         ArrayNode required = schema.putArray("required");
@@ -123,9 +128,8 @@ public final class ChatBiMcpServer {
         if (question.isBlank()) {
             throw new IllegalArgumentException("argument question is required");
         }
-        String user = arguments.path("user").asText(defaultUser);
         String conversationId = arguments.path("conversationId").asText("");
-        JsonNode response = callBackend(question, user, conversationId);
+        JsonNode response = callBackend(question, conversationId);
 
         String status = response.path("result").path("status").asText("UNKNOWN");
         boolean error = !"OK".equals(status);
@@ -137,7 +141,7 @@ public final class ChatBiMcpServer {
         return result;
     }
 
-    private JsonNode callBackend(String question, String user, String conversationId) throws Exception {
+    private JsonNode callBackend(String question, String conversationId) throws Exception {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("question", question);
         if (conversationId != null && !conversationId.isBlank()) {
@@ -147,13 +151,15 @@ public final class ChatBiMcpServer {
                 .uri(URI.create(apiBase + "/api/chat/query"))
                 .timeout(Duration.ofSeconds(120))
                 .header("Content-Type", "application/json; charset=utf-8")
+                .header("X-ChatBI-Service-Token", serviceToken)
                 .POST(HttpRequest.BodyPublishers.ofString(
                         objectMapper.writeValueAsString(body), StandardCharsets.UTF_8));
-        if (user != null && !user.isBlank()) {
-            builder.header("X-ChatBI-User", user);
-        }
         HttpResponse<String> response = httpClient.send(builder.build(),
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() == 401 || response.statusCode() == 403) {
+            throw new IllegalStateException("ChatBI 服务身份被拒绝（HTTP " + response.statusCode()
+                    + "），请确认 MCP 与后端使用相同的 CHATBI_MCP_SERVICE_TOKEN");
+        }
         if (response.statusCode() >= 400) {
             throw new IllegalStateException("ChatBI API " + response.statusCode() + ": " + response.body());
         }

@@ -7,7 +7,6 @@ import com.chatbi.mapper.QueryAuditMapper;
 import com.chatbi.service.CurrentUserService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,13 +33,15 @@ public class AuditController {
     @GetMapping
     public List<QueryAudit> recent(@RequestParam(defaultValue = "50") int limit,
                                    @RequestParam(required = false) String status,
-                                   @RequestParam(defaultValue = "false") boolean all,
-                                   @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
+                                   @RequestParam(defaultValue = "false") boolean all) {
+        AppUser user = currentUserService.getCurrent();
+        if (all) {
+            currentUserService.requireAdmin();
+        }
         int safeLimit = Math.max(1, Math.min(200, limit));
         LambdaQueryWrapper<QueryAudit> query = new LambdaQueryWrapper<QueryAudit>()
                 .orderByDesc(QueryAudit::getId).last("LIMIT " + safeLimit);
-        if (!(Boolean.TRUE.equals(user.getIsAdmin()) && all)) {
+        if (!(currentUserService.isAdmin() && all)) {
             query.eq(QueryAudit::getUserId, user.getUsername());
         }
         if (status != null && !status.isBlank()) {
@@ -51,11 +52,13 @@ public class AuditController {
 
     @GetMapping("/stats")
     public Map<String, Object> stats(@RequestParam(defaultValue = "7") int days,
-                                     @RequestParam(defaultValue = "false") boolean all,
-                                     @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
+                                     @RequestParam(defaultValue = "false") boolean all) {
+        AppUser user = currentUserService.getCurrent();
+        if (all) {
+            currentUserService.requireAdmin();
+        }
         int safeDays = Math.max(1, Math.min(90, days));
-        boolean global = Boolean.TRUE.equals(user.getIsAdmin()) && all;
+        boolean global = currentUserService.isAdmin() && all;
         List<Object> args = new ArrayList<>();
         StringBuilder where = new StringBuilder(" WHERE created_at >= now() - make_interval(days => ?)");
         args.add(safeDays);

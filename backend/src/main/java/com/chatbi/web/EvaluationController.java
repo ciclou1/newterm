@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,21 +26,20 @@ public class EvaluationController {
     }
 
     @GetMapping("/questions")
-    public EvaluationService.EvalDataset questions(@RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public EvaluationService.EvalDataset questions() {
+        currentUserService.requireAdmin();
         return evaluationService.dataset();
     }
 
     @GetMapping("/jobs")
-    public List<EvaluationService.EvalJobView> jobs(@RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public List<EvaluationService.EvalJobView> jobs() {
+        currentUserService.requireAdmin();
         return evaluationService.recent();
     }
 
     @GetMapping("/jobs/{id}")
-    public EvaluationService.EvalJobView job(@PathVariable String id,
-                                             @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public EvaluationService.EvalJobView job(@PathVariable String id) {
+        currentUserService.requireAdmin();
         EvaluationService.EvalJobView view = evaluationService.job(id);
         if (view == null) {
             throw new IllegalArgumentException("评测任务不存在: " + id);
@@ -50,11 +48,8 @@ public class EvaluationController {
     }
 
     @PostMapping("/run")
-    public EvaluationService.EvalJobView run(
-            @RequestBody(required = false) RunRequest request,
-            @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
-        currentUserService.requireAdmin(user);
+    public EvaluationService.EvalJobView run(@RequestBody(required = false) RunRequest request) {
+        AppUser user = currentUserService.requireAdminUser();
         RunRequest body = request == null ? new RunRequest(null, null, null) : request;
         return evaluationService.start(body.category(), body.limit(),
                 body.user() == null || body.user().isBlank() ? user.getUsername() : body.user());

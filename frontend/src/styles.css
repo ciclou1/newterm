@@ -245,6 +245,140 @@ button {
   color: var(--ink);
 }
 
+/* ---------- authentication ---------- */
+
+.boot-screen {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.login-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.login-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.login-main {
+  display: grid;
+  place-items: center;
+  padding: 32px 20px 64px;
+}
+
+.login-card {
+  width: min(420px, 100%);
+  padding: 30px 30px 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.login-card h1 {
+  margin: 6px 0 8px;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.login-submit {
+  margin-top: 4px;
+  justify-content: center;
+  padding: 10px 16px;
+}
+
+.login-hint {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-meta {
+  display: grid;
+  line-height: 1.25;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-role {
+  font-size: 10px;
+  color: var(--muted);
+}
+
 .view {
   min-height: 0;
   overflow: auto;
@@ -1374,6 +1508,20 @@ details.inspector[open] summary::before {
 @media (max-width: 620px) {
   .user-select span {
     display: none;
+  }
+
+  .user-meta {
+    display: none;
+  }
+
+  .user-chip {
+    padding: 4px;
+    border: 0;
+    background: transparent;
+  }
+
+  .login-card {
+    padding: 24px 20px 20px;
   }
 
   .hero {

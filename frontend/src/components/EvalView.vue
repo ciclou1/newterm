@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { EvalCaseResult, EvalDataset, EvalJob } from '../types'
 import { ApiError, api } from '../api'
 
-const props = defineProps<{ user: string; isAdmin: boolean }>()
+const props = defineProps<{ isAdmin: boolean }>()
 
 const categoryLabels: Record<string, string> = {
   sales: '销售',
@@ -58,15 +58,15 @@ const questionCounts = computed(() => {
 async function load() {
   if (!props.isAdmin) {
     loading.value = false
-    error.value = '评测控制台需要管理员身份，请在右上角切换为“李思 · 数据管理员”。'
+    error.value = '评测控制台需要管理员权限，请使用管理员账号登录。'
     return
   }
   loading.value = true
   error.value = ''
   try {
     const [datasetData, jobData] = await Promise.all([
-      api.get<EvalDataset>('/api/eval/questions', props.user),
-      api.get<EvalJob[]>('/api/eval/jobs', props.user),
+      api.get<EvalDataset>('/api/eval/questions'),
+      api.get<EvalJob[]>('/api/eval/jobs'),
     ])
     dataset.value = datasetData
     jobs.value = jobData
@@ -90,7 +90,7 @@ async function startRun() {
     const job = await api.post<EvalJob>('/api/eval/run', {
       category: category.value || null,
       limit: limit.value === '' ? null : limit.value,
-    }, props.user)
+    })
     active.value = job
     jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
     poll(job.id)
@@ -105,7 +105,7 @@ function poll(id: string) {
   clearTimeout(timer)
   timer = window.setTimeout(async () => {
     try {
-      const job = await api.get<EvalJob>(`/api/eval/jobs/${id}`, props.user)
+      const job = await api.get<EvalJob>(`/api/eval/jobs/${id}`)
       active.value = job
       jobs.value = jobs.value.map((item) => (item.id === job.id ? job : item))
       if (job.status === 'RUNNING') {
@@ -140,7 +140,7 @@ function timeLabel(value: string): string {
 // The user directory loads asynchronously, so isAdmin is initially false.
 // Watch it (instead of checking once on mount) to load as soon as the admin
 // identity is known.
-watch(() => [props.user, props.isAdmin] as const, load, { immediate: true })
+watch(() => props.isAdmin, load, { immediate: true })
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 

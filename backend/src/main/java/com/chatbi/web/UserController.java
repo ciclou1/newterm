@@ -20,14 +20,7 @@ public class UserController {
 
     @GetMapping
     public List<UserView> users() {
+        currentUserService.requireAdmin();
         return currentUserService.all().stream().map(UserView::from).toList();
-    }
-
-    public record UserView(Long id, String username, String displayName, String role,
-                           Long departmentId, boolean admin) {
-        static UserView from(AppUser user) {
-            return new UserView(user.getId(), user.getUsername(), user.getDisplayName(), user.getRole(),
-                    user.getDepartmentId(), Boolean.TRUE.equals(user.getIsAdmin()));
-        }
     }
 }

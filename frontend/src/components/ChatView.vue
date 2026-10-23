@@ -103,7 +103,7 @@ async function send(question?: string) {
     const response = await api.post<ChatResponse>('/api/chat/query', {
       question: text,
       conversationId: conversationId.value,
-    }, props.user)
+    })
     assistant.pending = false
     assistant.response = response
     conversationId.value = response.conversationId

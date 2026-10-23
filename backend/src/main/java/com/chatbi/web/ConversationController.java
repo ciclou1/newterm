@@ -8,7 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,22 +28,19 @@ public class ConversationController {
     }
 
     @GetMapping
-    public List<Conversation> list(@RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        return conversationService.list(currentUserService.resolve(username));
+    public List<Conversation> list() {
+        return conversationService.list(currentUserService.getCurrent());
     }
 
     @GetMapping("/{id}")
-    public ConversationService.ConversationDetail detail(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
+    public ConversationService.ConversationDetail detail(@PathVariable UUID id) {
+        AppUser user = currentUserService.getCurrent();
         return conversationService.detail(id, user);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id,
-                                       @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        conversationService.delete(id, currentUserService.resolve(username));
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        conversationService.delete(id, currentUserService.getCurrent());
         return ResponseEntity.noContent().build();
     }
 }

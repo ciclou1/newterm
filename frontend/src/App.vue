@@ -4,48 +4,78 @@ import ChatView from './components/ChatView.vue'
 import SemanticView from './components/SemanticView.vue'
 import EvalView from './components/EvalView.vue'
 import AuditView from './components/AuditView.vue'
-import type { AppUser } from './types'
-import { api } from './api'
+import LoginView from './components/LoginView.vue'
+import { api, clearSession, getStoredUser, getToken, storeSession, storeUser } from './api'
+import type { AuthUser, LoginResponse } from './api'
 
 type ViewKey = 'chat' | 'semantic' | 'eval' | 'audit'
 
-const views: { key: ViewKey; label: string }[] = [
+const allViews: { key: ViewKey; label: string; adminOnly?: boolean }[] = [
   { key: 'chat', label: '问数' },
   { key: 'semantic', label: '语义层' },
-  { key: 'eval', label: '评测' },
+  { key: 'eval', label: '评测', adminOnly: true },
   { key: 'audit', label: '审计' },
 ]
 
 function initialView(): ViewKey {
   const hash = window.location.hash.replace('#', '') as ViewKey
-  return views.some((item) => item.key === hash) ? hash : 'chat'
+  return allViews.some((item) => item.key === hash) ? hash : 'chat'
 }
 
+const user = ref<AuthUser | null>(getStoredUser())
+const booting = ref(Boolean(getToken()))
 const view = ref<ViewKey>(initialView())
-const users = ref<AppUser[]>([])
-const selected = ref(localStorage.getItem('chatbi.user') ?? 'zhangsan')
 const theme = ref(localStorage.getItem('chatbi.theme')
   ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
 
-const currentUser = computed(() => {
-  const user = users.value.find((item) => item.username === selected.value)
-  return user?.username ?? selected.value
+const isAdmin = computed(() => Boolean(user.value?.admin))
+const views = computed(() => allViews.filter((item) => !item.adminOnly || isAdmin.value))
+const roleLabel = computed(() => {
+  const roles = user.value?.roles ?? []
+  if (roles.includes('ADMIN')) return '管理员'
+  if (roles.includes('MANAGER')) return '受限用户'
+  if (roles.includes('VIEWER')) return '只读用户'
+  return user.value?.role ?? '已登录'
 })
 
-const currentUserInfo = computed(() => users.value.find((item) => item.username === currentUser.value))
-const isAdmin = computed(() => Boolean(currentUserInfo.value?.admin))
+function allowed(next: ViewKey): boolean {
+  const item = allViews.find((entry) => entry.key === next)
+  return Boolean(item) && (!item.adminOnly || isAdmin.value)
+}
 
 function navigate(next: ViewKey) {
+  if (!allowed(next)) return
   view.value = next
   history.replaceState(null, '', `#${next}`)
 }
 
 function onHashChange() {
-  view.value = initialView()
+  const next = initialView()
+  view.value = allowed(next) ? next : 'chat'
 }
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+function onLoggedIn(login: LoginResponse) {
+  storeSession(login)
+  user.value = login.user
+  booting.value = false
+  const next = initialView()
+  view.value = allowed(next) ? next : 'chat'
+}
+
+function logout() {
+  clearSession()
+  user.value = null
+  view.value = 'chat'
+  history.replaceState(null, '', '#chat')
+}
+
+function onUnauthorized() {
+  user.value = null
+  view.value = 'chat'
 }
 
 watch(theme, (value) => {
@@ -53,27 +83,51 @@ watch(theme, (value) => {
   localStorage.setItem('chatbi.theme', value)
 }, { immediate: true })
 
-watch(selected, (value) => {
-  localStorage.setItem('chatbi.user', value)
+watch(isAdmin, (admin) => {
+  if (!admin && view.value === 'eval') {
+    navigate('chat')
+  }
 })
 
 onMounted(async () => {
   window.addEventListener('hashchange', onHashChange)
-  try {
-    users.value = await api.get<AppUser[]>('/api/users')
-    if (!users.value.some((user) => user.username === selected.value)) {
-      selected.value = users.value[0]?.username ?? 'zhangsan'
+  window.addEventListener('chatbi:unauthorized', onUnauthorized)
+  if (getToken()) {
+    try {
+      const current = await api.me()
+      storeUser(current)
+      user.value = current
+    } catch {
+      clearSession()
+      user.value = null
     }
-  } catch {
-    users.value = []
+  }
+  booting.value = false
+  if (!allowed(view.value)) {
+    view.value = 'chat'
   }
 })
 
-onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
+onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', onHashChange)
+  window.removeEventListener('chatbi:unauthorized', onUnauthorized)
+})
 </script>
 
 <template>
-  <div class="shell">
+  <div v-if="booting" class="boot-screen">
+    <span class="spinner"></span>
+    <span class="muted">正在校验登录状态…</span>
+  </div>
+
+  <LoginView
+    v-else-if="!user"
+    :theme="theme"
+    @logged-in="onLoggedIn"
+    @toggle-theme="toggleTheme"
+  />
+
+  <div v-else class="shell">
     <header class="topbar">
       <button class="brand" type="button" style="border: 0; background: transparent; padding: 0; text-align: left"
         @click="navigate('chat')">
@@ -97,15 +151,19 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
       </nav>
 
       <div class="top-actions">
-        <label class="user-select" title="演示身份决定行级权限">
-          <span>身份</span>
-          <select v-model="selected" aria-label="切换用户">
-            <option v-for="user in users" :key="user.username" :value="user.username">
-              {{ user.displayName }}
-            </option>
-            <option v-if="!users.length" :value="selected">{{ selected }}</option>
-          </select>
-        </label>
+        <div class="user-chip" :title="user.role">
+          <span class="user-avatar">{{ user.displayName?.slice(0, 1) || user.username.slice(0, 1) }}</span>
+          <span class="user-meta">
+            <span class="user-name">{{ user.displayName || user.username }}</span>
+            <span class="user-role">{{ roleLabel }}</span>
+          </span>
+        </div>
+        <button class="icon-btn" type="button" aria-label="退出登录" title="退出登录" @click="logout">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6.5 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3M10 5.5 12.5 8 10 10.5M6.5 8h6"
+              stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <button class="icon-btn" type="button" :aria-label="theme === 'dark' ? '切换浅色模式' : '切换深色模式'"
           @click="toggleTheme">
           <svg v-if="theme === 'light'" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -124,13 +182,13 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
     <main class="view" :class="{ 'chat-mode': view === 'chat' }">
       <ChatView
         v-show="view === 'chat'"
-        :key="currentUser"
-        :user="currentUser"
+        :key="user.username"
+        :user="user.username"
         :theme="theme"
       />
-      <SemanticView v-if="view === 'semantic'" :key="currentUser" :user="currentUser" :is-admin="isAdmin" />
-      <EvalView v-if="view === 'eval'" :key="currentUser" :user="currentUser" :is-admin="isAdmin" />
-      <AuditView v-if="view === 'audit'" :key="currentUser" :user="currentUser" :is-admin="isAdmin" />
+      <SemanticView v-if="view === 'semantic'" :key="user.username" :is-admin="isAdmin" />
+      <EvalView v-if="view === 'eval' && isAdmin" :key="user.username" :is-admin="isAdmin" />
+      <AuditView v-if="view === 'audit'" :key="user.username" :is-admin="isAdmin" />
     </main>
   </div>
 </template>

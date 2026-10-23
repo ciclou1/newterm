@@ -117,6 +117,7 @@ export interface AppUser {
   username: string
   displayName: string
   role: string
+  roles: string[]
   departmentId: number | null
   admin: boolean
   enabled: boolean

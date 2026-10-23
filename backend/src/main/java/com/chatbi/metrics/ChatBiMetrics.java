@@ -15,8 +15,7 @@ public class ChatBiMetrics {
         this.registry = registry;
     }
 
-    public void record(AgentResult result) {
-        String status = result.status() == null ? "UNKNOWN" : result.status();
+    public void record(AgentResult result) {        String status = result.status() == null ? "UNKNOWN" : result.status();
         String mode = result.mode() == null ? "UNKNOWN" : result.mode();
         registry.counter("chatbi.queries.total", "status", status, "mode", mode).increment();
         if (result.performance() != null) {
@@ -40,5 +39,21 @@ public class ChatBiMetrics {
         if ("CLARIFY".equals(result.status())) {
             registry.counter("chatbi.clarifications.total").increment();
         }
+    }
+
+    public void authenticationFailure(String reason) {
+        registry.counter("chatbi.auth.failures", "reason", reason).increment();
+    }
+
+    public void authorizationDenied() {
+        registry.counter("chatbi.authz.denied").increment();
+    }
+
+    public void rateLimited(String scope) {
+        registry.counter("chatbi.rate.limited", "scope", scope).increment();
+    }
+
+    public void quotaRejected(String type) {
+        registry.counter("chatbi.quota.rejected", "type", type).increment();
     }
 }

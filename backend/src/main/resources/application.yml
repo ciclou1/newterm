@@ -120,7 +120,23 @@ chatbi:
     max-repairs: ${CHATBI_QUERY_MAX_REPAIRS:2}
   security:
     allowed-origins: ${CHATBI_ALLOWED_ORIGINS:http://localhost:5174,http://localhost:8088}
-    default-user: zhangsan
+  auth:
+    # HS256 signing key. The local default is for development only; docker and
+    # prod profiles require CHATBI_JWT_SECRET and fail fast when it is absent.
+    jwt-secret: ${CHATBI_JWT_SECRET:local-dev-only-secret-change-me-0123456789abcdef}
+    jwt-issuer: ${CHATBI_JWT_ISSUER:chatbi}
+    access-token-ttl-seconds: ${CHATBI_JWT_TTL_SECONDS:3600}
+    demo-header-enabled: ${CHATBI_DEMO_HEADER_ENABLED:false}
+    service-token: ${CHATBI_MCP_SERVICE_TOKEN:}
+    service-username: ${CHATBI_MCP_SERVICE_USER:mcp-service}
+  rate-limit:
+    enabled: ${CHATBI_RATE_LIMIT_ENABLED:true}
+    requests-per-minute: ${CHATBI_RATE_LIMIT_QPM:10}
+    burst-capacity: ${CHATBI_RATE_LIMIT_BURST:0}
+    login-requests-per-minute: ${CHATBI_LOGIN_RATE_LIMIT_QPM:20}
+  quota:
+    daily-token-limit: ${CHATBI_DAILY_TOKEN_LIMIT:2000000}
+    daily-cost-limit-usd: ${CHATBI_DAILY_COST_LIMIT_USD:5.00}
   schema-link:
     max-tables: 6
     max-columns-per-table: 18
@@ -142,3 +158,18 @@ spring:
 chatbi:
   query:
     url: jdbc:postgresql://postgres:5432/chatbi?stringtype=unspecified
+  auth:
+    jwt-secret: ${CHATBI_JWT_SECRET:}
+    demo-header-enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+chatbi:
+  auth:
+    # Production must supply a random secret of at least 32 bytes.
+    jwt-secret: ${CHATBI_JWT_SECRET:}
+    demo-header-enabled: false

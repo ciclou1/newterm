@@ -14,6 +14,9 @@ public class ChatBiProperties {
     private Ai ai = new Ai();
     private Query query = new Query();
     private Security security = new Security();
+    private Auth auth = new Auth();
+    private RateLimit rateLimit = new RateLimit();
+    private Quota quota = new Quota();
     private SchemaLink schemaLink = new SchemaLink();
 
     @Data
@@ -44,7 +47,41 @@ public class ChatBiProperties {
     @Data
     public static class Security {
         private List<String> allowedOrigins = new ArrayList<>(List.of("http://localhost:5174", "http://localhost:8088"));
-        private String defaultUser = "zhangsan";
+    }
+
+    @Data
+    public static class Auth {
+        /** HS256 signing key. Minimum 32 bytes; production profiles must supply it. */
+        private String jwtSecret = "";
+        private String jwtIssuer = "chatbi";
+        private long accessTokenTtlSeconds = 3600;
+        /**
+         * Demo-only escape hatch. When false (the default), X-ChatBI-User is
+         * completely ignored and cannot create an authenticated principal.
+         */
+        private boolean demoHeaderEnabled = false;
+        /** Shared secret used by the stdio MCP server. Empty disables service auth. */
+        private String serviceToken = "";
+        private String serviceUsername = "mcp-service";
+    }
+
+    @Data
+    public static class RateLimit {
+        private boolean enabled = true;
+        /** Token-bucket refill rate for expensive NL2SQL requests. */
+        private int requestsPerMinute = 10;
+        /** Burst capacity; defaults to requestsPerMinute when <= 0. */
+        private int burstCapacity = 0;
+        /** Also protect the login endpoint against password guessing. */
+        private int loginRequestsPerMinute = 20;
+    }
+
+    @Data
+    public static class Quota {
+        /** Per-user daily token budget (prompt + completion). 0 disables the check. */
+        private long dailyTokenLimit = 2_000_000;
+        /** Per-user daily estimated model cost in USD. 0 disables the check. */
+        private BigDecimal dailyCostLimitUsd = new BigDecimal("5.00");
     }
 
     @Data

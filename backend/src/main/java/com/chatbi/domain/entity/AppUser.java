@@ -18,4 +18,9 @@ public class AppUser {
     private Long departmentId;
     private Boolean isAdmin;
     private Boolean enabled;
+    /** BCrypt hash. Null means password login is disabled for this account. */
+    private String passwordHash;
+    /** Comma-separated application roles: ADMIN, MANAGER, VIEWER, SERVICE. */
+    private String roles;
+    private OffsetDateTime lastLoginAt;
 }

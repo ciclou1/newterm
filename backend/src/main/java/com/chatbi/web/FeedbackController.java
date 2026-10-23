@@ -15,7 +15,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,9 +37,8 @@ public class FeedbackController {
     }
 
     @PostMapping
-    public FeedbackResponse submit(@Valid @RequestBody FeedbackRequest request,
-                                   @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
+    public FeedbackResponse submit(@Valid @RequestBody FeedbackRequest request) {
+        AppUser user = currentUserService.getCurrent();
         QueryAudit audit = auditMapper.selectOne(new LambdaQueryWrapper<QueryAudit>()
                 .eq(QueryAudit::getId, request.auditId()).eq(QueryAudit::getUserId, user.getUsername()));
         if (audit == null) {

@@ -2,7 +2,6 @@ package com.chatbi.web;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.chatbi.common.ChatBiException;
-import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.FewShotExample;
 import com.chatbi.domain.entity.RowPermission;
 import com.chatbi.domain.entity.SemEnum;
@@ -27,7 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -121,15 +119,14 @@ public class SemanticController {
 
     @GetMapping("/permissions")
     public List<RowPermission> permissions() {
+        currentUserService.requireAdmin();
         return permissionMapper.selectList(new LambdaQueryWrapper<RowPermission>()
                 .orderByAsc(RowPermission::getUserId));
     }
 
     @PostMapping("/metrics")
-    public SemMetric saveMetric(@Valid @RequestBody MetricRequest request,
-                                @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        AppUser user = currentUserService.resolve(username);
-        currentUserService.requireAdmin(user);
+    public SemMetric saveMetric(@Valid @RequestBody MetricRequest request) {
+        currentUserService.requireAdmin();
         SemanticSnapshot snapshot = catalog.snapshot();
         if (snapshot.table(request.baseTable()).isEmpty()) {
             throw ChatBiException.badRequest("INVALID_BASE_TABLE", "指标所属表不在语义层中");
@@ -168,9 +165,8 @@ public class SemanticController {
     }
 
     @PostMapping("/synonyms")
-    public SemSynonym saveSynonym(@Valid @RequestBody SynonymRequest request,
-                                  @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public SemSynonym saveSynonym(@Valid @RequestBody SynonymRequest request) {
+        currentUserService.requireAdmin();
         SemSynonym synonym = synonymMapper.selectOne(new LambdaQueryWrapper<SemSynonym>()
                 .eq(SemSynonym::getTargetType, request.targetType())
                 .eq(SemSynonym::getTargetKey, request.targetKey())
@@ -192,9 +188,8 @@ public class SemanticController {
     }
 
     @PostMapping("/examples")
-    public FewShotExample saveExample(@Valid @RequestBody ExampleRequest request,
-                                      @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public FewShotExample saveExample(@Valid @RequestBody ExampleRequest request) {
+        currentUserService.requireAdmin();
         SemanticSnapshot snapshot = catalog.snapshot();
         SqlAstValidator.Validation validation = validator.validate(request.sqlText(),
                 new LinkedHashSet<>(snapshot.enabledTableNames()));
@@ -222,9 +217,8 @@ public class SemanticController {
     }
 
     @PostMapping("/permissions")
-    public RowPermission savePermission(@Valid @RequestBody PermissionRequest request,
-                                        @RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public RowPermission savePermission(@Valid @RequestBody PermissionRequest request) {
+        currentUserService.requireAdmin();
         if (catalog.snapshot().table(request.tableName()).isEmpty()) {
             throw ChatBiException.badRequest("INVALID_TABLE", "表不在语义层中");
         }
@@ -249,8 +243,8 @@ public class SemanticController {
     }
 
     @PostMapping("/refresh")
-    public Map<String, Object> refresh(@RequestHeader(value = "X-ChatBI-User", required = false) String username) {
-        currentUserService.requireAdmin(currentUserService.resolve(username));
+    public Map<String, Object> refresh() {
+        currentUserService.requireAdmin();
         SemanticSnapshot snapshot = catalog.refresh();
         SemanticIndexer.IndexStats stats = indexer.reindexAll();
         return Map.of("version", snapshot.version(), "documents", stats.documents(),

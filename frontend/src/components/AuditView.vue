@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AuditStats, QueryAudit } from '../types'
 import { ApiError, api } from '../api'
 
-const props = defineProps<{ user: string; isAdmin: boolean }>()
+const props = defineProps<{ isAdmin: boolean }>()
 
 const stats = ref<AuditStats | null>(null)
 const audits = ref<QueryAudit[]>([])
@@ -49,8 +49,8 @@ async function load() {
     })
     if (statusFilter.value) auditQuery.set('status', statusFilter.value)
     const [statsData, auditData] = await Promise.all([
-      api.get<AuditStats>(`/api/audit/stats?${query}`, props.user),
-      api.get<QueryAudit[]>(`/api/audit?${auditQuery}`, props.user),
+      api.get<AuditStats>(`/api/audit/stats?${query}`),
+      api.get<QueryAudit[]>(`/api/audit?${auditQuery}`),
     ])
     stats.value = statsData
     audits.value = auditData

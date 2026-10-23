@@ -5,7 +5,7 @@ import type {
 } from '../types'
 import { ApiError, api } from '../api'
 
-const props = defineProps<{ user: string; isAdmin: boolean }>()
+const props = defineProps<{ isAdmin: boolean }>()
 
 const overview = ref<SemanticOverview | null>(null)
 const details = ref<TableDetail[]>([])
@@ -50,7 +50,9 @@ async function load() {
       api.get<SemanticOverview>('/api/semantic/overview'),
       api.get<TableDetail[]>('/api/semantic/tables'),
       api.get<SemMetric[]>('/api/semantic/metrics'),
-      api.get<RowPermission[]>('/api/semantic/permissions'),
+      props.isAdmin
+        ? api.get<RowPermission[]>('/api/semantic/permissions')
+        : Promise.resolve([] as RowPermission[]),
     ])
     overview.value = overviewData
     details.value = detailData
@@ -67,7 +69,7 @@ async function refreshIndex() {
   refreshing.value = true
   refreshNote.value = ''
   try {
-    const result = await api.post<Record<string, unknown>>('/api/semantic/refresh', {}, props.user)
+    const result = await api.post<Record<string, unknown>>('/api/semantic/refresh', {})
     refreshNote.value = `索引已刷新：${result.documents ?? '—'} 个文档，${result.upserted ?? 0} 个更新`
     await load()
   } catch (caught) {
@@ -255,7 +257,7 @@ onMounted(load)
         </div>
       </section>
 
-      <section class="section">
+      <section v-if="props.isAdmin" class="section">
         <div class="section-head">
           <div>
             <h2>行级权限</h2>

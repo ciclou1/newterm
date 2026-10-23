@@ -11,13 +11,13 @@ import com.chatbi.presentation.ResultPresenter;
 import com.chatbi.service.AuditService;
 import com.chatbi.service.ConversationService;
 import com.chatbi.service.CurrentUserService;
+import com.chatbi.service.QuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,26 +33,29 @@ public class ChatController {
     private final AuditService auditService;
     private final ResultPresenter presenter;
     private final ChatBiMetrics metrics;
+    private final QuotaService quotaService;
 
     public ChatController(CurrentUserService currentUserService,
                           ConversationService conversationService,
                           Nl2SqlAgent agent,
                           AuditService auditService,
                           ResultPresenter presenter,
-                          ChatBiMetrics metrics) {
+                          ChatBiMetrics metrics,
+                          QuotaService quotaService) {
         this.currentUserService = currentUserService;
         this.conversationService = conversationService;
         this.agent = agent;
         this.auditService = auditService;
         this.presenter = presenter;
         this.metrics = metrics;
+        this.quotaService = quotaService;
     }
 
     @PostMapping("/query")
     public QueryResponse query(@Valid @RequestBody ChatQueryRequest request,
-                               @RequestHeader(value = "X-ChatBI-User", required = false) String username,
                                HttpServletRequest servletRequest) {
-        AppUser user = currentUserService.resolve(username);
+        AppUser user = currentUserService.getCurrent();
+        quotaService.check(user.getUsername());
         ConversationService.ConversationContext context =
                 conversationService.begin(request.conversationId(), user, request.question());
         AgentResult result = agent.ask(request.question(), user, context.history());

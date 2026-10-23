@@ -23,7 +23,19 @@ public class ChatBiException extends RuntimeException {
         return new ChatBiException("NOT_FOUND", message, HttpStatus.NOT_FOUND);
     }
 
+    public static ChatBiException unauthorized(String message) {
+        return new ChatBiException("AUTHENTICATION_REQUIRED", message, HttpStatus.UNAUTHORIZED);
+    }
+
     public static ChatBiException forbidden(String code, String message) {
         return new ChatBiException(code, message, HttpStatus.FORBIDDEN);
+    }
+
+    public static ChatBiException tooManyRequests(String code, String message) {
+        return new ChatBiException(code, message, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    public static ChatBiException serviceUnavailable(String code, String message) {
+        return new ChatBiException(code, message, HttpStatus.SERVICE_UNAVAILABLE);
     }
 }

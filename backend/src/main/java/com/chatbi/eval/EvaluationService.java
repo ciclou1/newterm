@@ -3,7 +3,7 @@ package com.chatbi.eval;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.nl2sql.AgentResult;
 import com.chatbi.nl2sql.Nl2SqlAgent;
-import com.chatbi.service.CurrentUserService;
+import com.chatbi.service.UserDirectory;
 import com.chatbi.sql.QueryExecutor;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,7 +46,7 @@ public class EvaluationService {
 
     private final Nl2SqlAgent agent;
     private final QueryExecutor queryExecutor;
-    private final CurrentUserService currentUserService;
+    private final UserDirectory userDirectory;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, EvalJob> jobs = new ConcurrentHashMap<>();
@@ -54,10 +54,10 @@ public class EvaluationService {
     private volatile EvalDataset dataset;
 
     public EvaluationService(Nl2SqlAgent agent, QueryExecutor queryExecutor,
-                             CurrentUserService currentUserService, ObjectMapper objectMapper) {
+                             UserDirectory userDirectory, ObjectMapper objectMapper) {
         this.agent = agent;
         this.queryExecutor = queryExecutor;
-        this.currentUserService = currentUserService;
+        this.userDirectory = userDirectory;
         this.objectMapper = objectMapper;
     }
 
@@ -87,7 +87,10 @@ public class EvaluationService {
     }
 
     public EvalJobView start(String category, Integer limit, String username) {
-        AppUser user = currentUserService.resolve(username);
+        AppUser user = userDirectory.findByUsername(username);
+        if (user == null || Boolean.FALSE.equals(user.getEnabled())) {
+            throw new IllegalArgumentException("评测执行用户不存在或已禁用: " + username);
+        }
         List<EvalQuestion> questions = dataset().questions().stream()
                 .filter(q -> category == null || category.isBlank() || category.equals(q.category()))
                 .limit(limit == null || limit <= 0 ? Long.MAX_VALUE : limit)
