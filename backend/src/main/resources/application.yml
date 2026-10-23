@@ -142,6 +142,16 @@ chatbi:
     max-metrics: 6
     max-examples: 4
     cache-ttl-seconds: 300
+  embedding:
+    # The verified deepseek gateway returned 503 model_not_found for
+    # /v1/embeddings (text-embedding-3-*, bge-m3, deepseek-embedding), so the
+    # only implemented provider is the deterministic hash model. Its vectors
+    # are lexical feature hashes, NOT semantic embeddings. Switching provider
+    # also requires a Flyway migration for semantic_embedding.embedding
+    # (currently vector(512)) and a full reindex.
+    provider: ${CHATBI_EMBEDDING_PROVIDER:hash}
+    dimensions: ${CHATBI_EMBEDDING_DIMENSIONS:512}
+    model: ${CHATBI_EMBEDDING_MODEL:}
 
 ---
 spring:

@@ -115,7 +115,7 @@ npm run dev
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 50 个单元测试
+./mvnw -pl backend test                 # 81 个单元测试
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
@@ -259,7 +259,52 @@ curl -X POST http://localhost:8080/api/eval/run \
 
 也可以在前端「评测」页运行全量评测。
 
-> **口径说明**：仓库当前默认 `CHATBI_AI_ENABLED=false`，Demo 规划器在 120 题上的结果是 **规则基线 120/120（100%）**。这只验证语义层、执行链路、权限与评测框架本身，**不代表真实大模型在开放问题上的准确率**。接入真实模型后应重新跑同一评测集，并以结果为准。
+### 6.1 两种基线
+
+评测集相同、判定规则相同，但规划器不同：
+
+| 基线 | 规划器 | 结果 | 说明 |
+|---|---|---|---|
+| 规则基线 | `DemoSqlGenerator`（`CHATBI_AI_ENABLED=false`） | **120/120（100%）** | 只验证语义层、执行链路、权限与评测框架；题目与规则同源，不代表开放问题能力 |
+| 真实 LLM 基线 | `deepseek-flash`（OpenAI 兼容网关） | **118/120（98.33%）** | 下表为 2026-10-23 的真实运行结果 |
+
+### 6.2 真实 LLM 基线（2026-10-23）
+
+| 项目 | 值 |
+|---|---|
+| 模型 / 温度 | `deepseek-flash` / `0.1` |
+| Prompt 版本 | `2026-10-23.2` |
+| 评测集 | `1.0`，SHA-256 `fb19ec87705ed85d86096a89dbe04f9364bdb8533115ac8d86c545079d55d62a` |
+| 代码 commit | `b28dda1183554f64b9dfb14b4d3e46ac756b5058` |
+| 时间 | 2026-10-23 15:38:49 → 15:47:17（Asia/Shanghai） |
+| 总体 | **118/120（98.33%）** |
+| LLM 调用 | 120 次，失败 0，重试 0，JSON-mode 回退 0 |
+| Token | 输入 224,550；输出 16,533；合计 241,083 |
+| 成本 | 网关未公布单价，`cost_usd=0`；配置单价后按 `usage` 自动计算 |
+| 端到端延迟 | 平均 4,229ms，P50 3,469ms，P95 8,890ms，最大 25,585ms |
+| LLM 请求延迟 | 合计 484.8s，最大 4.24s（其余为 Schema Linking / 安全校验 / EXPLAIN / 执行） |
+
+分类准确率：
+
+| 分类 | 题数 | 通过 | 准确率 |
+|---|---|---|---|
+| 销售 | 35 | 34 | 97.14% |
+| 采购 | 15 | 15 | 100% |
+| 库存 | 15 | 15 | 100% |
+| 维修 | 20 | 20 | 100% |
+| 应收 | 15 | 14 | 93.33% |
+| 设备 | 10 | 10 | 100% |
+| 澄清 | 5 | 5 | 100% |
+| 多指标 | 5 | 5 | 100% |
+
+失败题：
+
+| # | 分类 / 难度 | 问题 | 失败原因 |
+|---|---|---|---|
+| 28 | 销售 / hard | 华东和华南今年销售额 | 模型按区域分组返回 2 行，金标为 1 行合计；属于“是否分组”的口径歧义 |
+| 88 | 应收 / easy | 当前开票金额 | 模型返回口径澄清，金标直接对 `v_receivable_fact` 求和 |
+
+> 复现命令见 `ao` artifact `newterm-8/chatbi-llm-production-baseline.md`；规则基线与 LLM 基线使用同一评测集与同一执行准确率判定（行序不敏感、数值容差、状态校验）。
 
 ---
 
@@ -270,9 +315,17 @@ Prometheus 指标前缀为 `chatbi`：
 - `chatbi_queries_total{status,mode}`：请求量
 - `chatbi_query_duration_seconds{status}`：端到端延迟
 - `chatbi_tokens{kind}`：Prompt / Completion Token
-- `chatbi_cost_usd{mode}`：按模型价格估算的成本
+- `chatbi_cost_usd{mode}`：按配置单价估算的成本（未配置单价时为 0）
+- `chatbi_llm_calls_total{model,outcome}`：LLM 调用成功/失败
+- `chatbi_llm_request_duration_seconds{model,outcome}`：LLM 单次请求延迟
+- `chatbi_llm_tokens_total{model,kind}`：LLM Prompt / Completion Token
 - `chatbi_sql_blocked_total{code}`：安全拦截分类
 - `chatbi_clarifications_total`：澄清次数
+
+AI 诊断：
+
+- `GET /actuator/health` 的 `ai` 组件：`mode`、`model`、`baseUrl`、`clientAvailable`、`jsonModeSupported`、调用/失败/重试次数、最近一次错误与 Token。
+- `GET /api/health/ai`：同一份快照，便于脚本与告警查询；两者都不包含 API Key。
 
 审计表 `query_audit` 保存每次请求的问题、生成 SQL、最终 SQL、状态、失败阶段、尝试次数、行数、耗时、Token、成本与 Schema 命中；用户可对查询提交反馈（`POST /api/feedback`）。
 
@@ -348,16 +401,32 @@ npx -y supergateway \
 |---|---|---|
 | `CHATBI_AI_ENABLED` | `false` | 是否启用真实大模型 |
 | `CHATBI_AI_ALLOW_DEMO_FALLBACK` | `false` | AI 启用但生成失败时是否允许降级到规则引擎；开启后响应标记 `degraded=true` |
-| `OPENAI_API_KEY` | 空 | OpenAI 兼容 API Key |
+| `CHATBI_AI_API_KEY` | 空 | OpenAI 兼容 API Key（`OPENAI_API_KEY` 仍兼容） |
 | `CHATBI_AI_BASE_URL` | `https://api.openai.com` | 兼容网关地址 |
 | `CHATBI_AI_MODEL` | `gpt-4.1-mini` | 模型名称 |
-| `CHATBI_AI_INPUT_COST_PER_MILLION` | `0.40` | 输入成本（USD / 1M tokens） |
-| `CHATBI_AI_OUTPUT_COST_PER_MILLION` | `1.60` | 输出成本（USD / 1M tokens） |
+| `CHATBI_AI_TEMPERATURE` | `0.1` | 采样温度 |
+| `CHATBI_AI_MAX_TOKENS` | `1400` | 单次输出上限（含推理模型的 reasoning token） |
+| `CHATBI_AI_JSON_MODE` | `true` | 请求 `response_format=json_object`；网关拒绝时自动回退纯文本解析 |
+| `CHATBI_AI_TIMEOUT_SECONDS` | `45` | 读超时 |
+| `CHATBI_AI_CONNECT_TIMEOUT_SECONDS` | `10` | 连接超时 |
+| `CHATBI_AI_MAX_RETRIES` | `2` | 429/5xx/超时的最大重试次数（指数退避） |
+| `CHATBI_AI_RETRY_BACKOFF_MS` | `800` | 首次重试退避基数 |
+| `CHATBI_AI_MAX_PROMPT_CHARS` | `28000` | system + user 总字符预算（估算，非计费） |
+| `CHATBI_AI_MAX_SCHEMA_CHARS` | `16000` | Schema/Few-shot 段预算，超限时优先丢弃示例 |
+| `CHATBI_AI_MAX_HISTORY_CHARS` | `2000` | 历史对话预算，超限按最旧优先丢弃 |
+| `CHATBI_AI_MAX_HISTORY_TURNS` | `3` | 最多携带的历史轮数 |
+| `CHATBI_AI_MAX_QUESTION_CHARS` | `2000` | 单条问题清洗后的上限 |
+| `CHATBI_AI_INPUT_COST_PER_MILLION` | `0` | 输入单价（每 1M tokens）；未知时保持 0，不写死不可信价格 |
+| `CHATBI_AI_OUTPUT_COST_PER_MILLION` | `0` | 输出单价（每 1M tokens） |
+| `CHATBI_EMBEDDING_PROVIDER` | `hash` | 仅实现 `hash`；远程 embedding 需迁移与重建索引 |
+| `CHATBI_EMBEDDING_DIMENSIONS` | `512` | 必须与 `semantic_embedding.embedding` 的 `vector(512)` 一致 |
 | `CHATBI_READONLY_DB_USER` | `chatbi_ro` | 只读执行账号 |
 | `CHATBI_READONLY_DB_PASSWORD` | `chatbi_ro` | 只读账号密码 |
 | `CHATBI_ALLOWED_ORIGINS` | `http://localhost:5174,http://localhost:8088` | CORS 白名单 |
 | `CHATBI_QUERY_MAX_ROWS` | `500` | 最大返回行数 |
 | `CHATBI_QUERY_TIMEOUT_SECONDS` | `8` | 查询超时 |
+
+> `CHATBI_AI_ENABLED=true` 但没有可用的 API Key/客户端时，应用会在启动阶段失败，而不是静默使用规则引擎。启动日志会输出 `AI mode=LLM model=... baseUrl=...`（不含 Key），运行时可查询 `GET /api/health/ai` 或 `/actuator/health` 的 `ai` 组件。
 
 > 生产环境务必修改数据库密码、关闭演示身份头、限制网络暴露，并为只读账号配置最小权限。
 

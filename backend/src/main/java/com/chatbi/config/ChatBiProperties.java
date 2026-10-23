@@ -15,6 +15,7 @@ public class ChatBiProperties {
     private Query query = new Query();
     private Security security = new Security();
     private SchemaLink schemaLink = new SchemaLink();
+    private Embedding embedding = new Embedding();
 
     @Data
     public static class Ai {
@@ -89,5 +90,18 @@ public class ChatBiProperties {
         private int maxMetrics = 6;
         private int maxExamples = 4;
         private int cacheTtlSeconds = 300;
+    }
+
+    /**
+     * The verified gateway does not expose an embedding endpoint, so the only
+     * implemented provider is the deterministic character-hashing model. These
+     * knobs exist to make the seam explicit and to fail fast on a provider
+     * switch that would need a schema migration.
+     */
+    @Data
+    public static class Embedding {
+        private String provider = "hash";
+        private int dimensions = 512;
+        private String model = "";
     }
 }
