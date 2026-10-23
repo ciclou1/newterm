@@ -55,17 +55,21 @@ public class ChatController {
     public QueryResponse query(@Valid @RequestBody ChatQueryRequest request,
                                HttpServletRequest servletRequest) {
         AppUser user = currentUserService.getCurrent();
-        quotaService.check(user.getUsername());
-        ConversationService.ConversationContext context =
-                conversationService.begin(request.conversationId(), user, request.question());
-        AgentResult result = agent.ask(request.question(), user, context.history());
-        String requestId = String.valueOf(servletRequest.getAttribute(RequestIdFilter.REQUEST_ID));
-        Long auditId = auditService.record(requestId, context.conversation().getId(), user, result);
-        QueryResponse response = presenter.present(result, requestId,
-                context.conversation().getId(), auditId);
-        conversationService.complete(context.conversation(), response);
-        metrics.record(result);
-        return response;
+        QuotaService.Reservation reservation = quotaService.reserve(user.getUsername());
+        try {
+            ConversationService.ConversationContext context =
+                    conversationService.begin(request.conversationId(), user, request.question());
+            AgentResult result = agent.ask(request.question(), user, context.history());
+            String requestId = String.valueOf(servletRequest.getAttribute(RequestIdFilter.REQUEST_ID));
+            Long auditId = auditService.record(requestId, context.conversation().getId(), user, result);
+            QueryResponse response = presenter.present(result, requestId,
+                    context.conversation().getId(), auditId);
+            conversationService.complete(context.conversation(), response);
+            metrics.record(result);
+            return response;
+        } finally {
+            quotaService.release(reservation);
+        }
     }
 
     public record ChatQueryRequest(@NotBlank(message = "问题不能为空")

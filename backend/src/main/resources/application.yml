@@ -74,7 +74,8 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      # Never leak component details (AI gateway, DB latency) to anonymous probes.
+      show-details: never
   metrics:
     tags:
       application: ${spring.application.name}
@@ -130,14 +131,24 @@ chatbi:
     demo-header-enabled: ${CHATBI_DEMO_HEADER_ENABLED:false}
     service-token: ${CHATBI_MCP_SERVICE_TOKEN:}
     service-username: ${CHATBI_MCP_SERVICE_USER:mcp-service}
+    bootstrap-admin-username: ${CHATBI_BOOTSTRAP_ADMIN_USERNAME:lisi}
+    # Docker/prod fail fast when seeded demo credentials are still in place and
+    # this is empty. Value is only used to replace a demo/unset password.
+    bootstrap-admin-password: ${CHATBI_BOOTSTRAP_ADMIN_PASSWORD:}
   rate-limit:
     enabled: ${CHATBI_RATE_LIMIT_ENABLED:true}
     requests-per-minute: ${CHATBI_RATE_LIMIT_QPM:10}
     burst-capacity: ${CHATBI_RATE_LIMIT_BURST:0}
     login-requests-per-minute: ${CHATBI_LOGIN_RATE_LIMIT_QPM:20}
+    trust-forwarded-headers: ${CHATBI_TRUST_FORWARDED_HEADERS:false}
+    login-failure-threshold: ${CHATBI_LOGIN_FAILURE_THRESHOLD:5}
+    login-failure-window-seconds: ${CHATBI_LOGIN_FAILURE_WINDOW_SECONDS:900}
+    login-lock-seconds: ${CHATBI_LOGIN_LOCK_SECONDS:900}
   quota:
     daily-token-limit: ${CHATBI_DAILY_TOKEN_LIMIT:2000000}
     daily-cost-limit-usd: ${CHATBI_DAILY_COST_LIMIT_USD:5.00}
+    reserve-tokens: ${CHATBI_QUOTA_RESERVE_TOKENS:4096}
+    reserve-cost-usd: ${CHATBI_QUOTA_RESERVE_COST_USD:0.05}
   schema-link:
     max-tables: 6
     max-columns-per-table: 18

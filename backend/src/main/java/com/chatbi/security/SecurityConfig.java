@@ -86,7 +86,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/semantic/permissions/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/semantic/**").hasRole("ADMIN")
                         .requestMatchers("/api/eval/**").hasRole("ADMIN")
-                        .requestMatchers("/actuator/**").authenticated()
+                        // Metrics expose global traffic, cost and error distribution:
+                        // only administrators may read them. Health stays public above.
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(serviceTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(jwtAuthenticationFilter, ServiceTokenAuthenticationFilter.class);

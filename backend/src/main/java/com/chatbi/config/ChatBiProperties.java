@@ -69,6 +69,14 @@ public class ChatBiProperties {
         /** Shared secret used by the stdio MCP server. Empty disables service auth. */
         private String serviceToken = "";
         private String serviceUsername = "mcp-service";
+        /**
+         * Production first-start credential injection. In docker/prod, if the
+         * bootstrap account still has the seeded demo password (or no
+         * password), this value is required and becomes its BCrypt hash.
+         * Existing non-demo passwords are never overwritten.
+         */
+        private String bootstrapAdminUsername = "lisi";
+        private String bootstrapAdminPassword = "";
     }
 
     @Data
@@ -80,6 +88,18 @@ public class ChatBiProperties {
         private int burstCapacity = 0;
         /** Also protect the login endpoint against password guessing. */
         private int loginRequestsPerMinute = 20;
+        /**
+         * Whether X-Forwarded-For / X-Real-IP may identify the client. Leave
+         * false unless the backend is only reachable through a trusted proxy
+         * that overwrites those headers.
+         */
+        private boolean trustForwardedHeaders = false;
+        /** Failed logins for one username before a temporary lock. */
+        private int loginFailureThreshold = 5;
+        /** Window in which failures are counted. */
+        private int loginFailureWindowSeconds = 900;
+        /** How long a username stays locked after too many failures. */
+        private int loginLockSeconds = 900;
     }
 
     @Data
@@ -88,6 +108,13 @@ public class ChatBiProperties {
         private long dailyTokenLimit = 2_000_000;
         /** Per-user daily estimated model cost in USD. 0 disables the check. */
         private BigDecimal dailyCostLimitUsd = new BigDecimal("5.00");
+        /**
+         * Tokens reserved per in-flight request so concurrent requests cannot
+         * all pass the same check. Actual usage is still read from query_audit.
+         */
+        private long reserveTokens = 4096;
+        /** Cost in USD reserved per in-flight request. */
+        private BigDecimal reserveCostUsd = new BigDecimal("0.05");
     }
 
     @Data

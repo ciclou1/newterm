@@ -24,7 +24,7 @@
 | 身份与权限 | 用户名密码登录 → HS256 JWT；ADMIN / MANAGER / VIEWER 角色；管理员接口默认仅 ADMIN 可访问 |
 | 限流与配额 | 问数接口默认 10 QPM/用户（IP 兜底），按用户统计每日 Token 与成本配额，超限返回 429 |
 
-演示账号与数据权限（本地开发初始密码统一为 `ChatBI@2026`）：
+演示账号与数据权限（`ChatBI@2026` 是种子口令，仅限未启用 docker/prod profile 的本机演示；生产首启必须设置 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`）：
 
 | 用户 | 角色 | 数据范围 |
 |---|---|---|
@@ -79,6 +79,12 @@
 
 ```bash
 cp .env.example .env        # 可选：填写 OPENAI_API_KEY 等
+
+# 必填：生成 JWT 密钥并写入 CHATBI_JWT_SECRET（docker/prod 不接受空值或仓库占位值）
+openssl rand -base64 48
+# 必填：首次启动时设置 CHATBI_BOOTSTRAP_ADMIN_PASSWORD（至少 12 位）
+# 该口令会替换种子管理员 lisi 的演示密码；其余种子账号的密码登录会被禁用。
+
 docker compose up -d --build
 ```
 
@@ -90,16 +96,18 @@ docker compose up -d --build
 | 后端 API | http://localhost:8080 |
 | Swagger UI | http://localhost:8080/swagger-ui.html（无业务数据；生产建议关闭或仅内网） |
 | 健康检查 | http://localhost:8080/actuator/health |
-| Prometheus | http://localhost:8080/actuator/prometheus（需认证） |
+| Prometheus | http://localhost:8080/actuator/prometheus（仅 ADMIN） |
 
-首次启动会自动执行 Flyway 迁移、创建语义层视图并灌入演示数据。打开前端后用演示账号登录（例如 `lisi` / `ChatBI@2026`）。
+首次启动会自动执行 Flyway 迁移、创建语义层视图并灌入演示数据。打开前端后用管理员账号登录：用户名 `lisi`，密码为启动时设置的 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`。
 
-登录并调用受保护 API：
+> 下表默认密码 `ChatBI@2026` **仅用于未启用 docker/prod profile 的本机演示**。docker/prod 启动时会拒绝仍在使用的种子演示口令，必须提供 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`。
+
+登录并调用受保护 API（口令使用启动时设置的 bootstrap 口令）：
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"lisi","password":"ChatBI@2026"}' | jq -r .accessToken)
+  -d "{\"username\":\"lisi\",\"password\":\"$CHATBI_BOOTSTRAP_ADMIN_PASSWORD\"}" | jq -r .accessToken)
 
 curl http://localhost:8080/api/conversations -H "Authorization: Bearer $TOKEN"
 ```
@@ -122,18 +130,18 @@ npm install
 npm run dev
 ```
 
-打开 http://localhost:5174，使用演示账号登录。
+打开 http://localhost:5174。本地未启用 docker/prod profile 时可使用种子账号（`lisi` / `ChatBI@2026`），该口令仅限本机演示。
 
-本地开发必须提供合法的 JWT 密钥（至少 32 字节）。`application.yml` 中的默认值只适用于本地：
+本地开发也必须提供合法的 JWT 密钥（至少 32 字节）。`application.yml` 中的默认值只适用于本地；docker/prod profile 会拒绝该占位值：
 
 ```bash
-export CHATBI_JWT_SECRET='local-dev-only-secret-change-me-0123456789abcdef'
+export CHATBI_JWT_SECRET="$(openssl rand -base64 48)"
 ```
 
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 101 个测试（含 JWT / RBAC / 限流 / 配额 / P0 回归）
+./mvnw -pl backend test                 # 132 个测试（JWT/RBAC/配额/启动口令/限流/P0 回归）
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
@@ -272,7 +280,7 @@ Schema Linking 流程：
 # 管理员身份：先登录获取 JWT
 TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"lisi","password":"ChatBI@2026"}' | jq -r .accessToken)
+  -d "{\"username\":\"lisi\",\"password\":\"$CHATBI_BOOTSTRAP_ADMIN_PASSWORD\"}" | jq -r .accessToken)
 
 curl -X POST http://localhost:8080/api/eval/run \
   -H 'Content-Type: application/json' \
@@ -383,18 +391,25 @@ npx -y supergateway \
 | `CHATBI_AI_OUTPUT_COST_PER_MILLION` | `1.60` | 输出成本（USD / 1M tokens） |
 | `CHATBI_READONLY_DB_USER` | `chatbi_ro` | 只读执行账号 |
 | `CHATBI_READONLY_DB_PASSWORD` | `chatbi_ro` | 只读账号密码 |
-| `CHATBI_JWT_SECRET` | 本地开发默认值 | HS256 签名密钥，至少 32 字节；**生产必需** |
+| `CHATBI_JWT_SECRET` | 空（仅本地可不设） | HS256 签名密钥，至少 32 字节；docker/prod 下为空、过短或以 `local-dev-only` 开头都会启动失败 |
 | `CHATBI_JWT_ISSUER` | `chatbi` | JWT 签发方 |
 | `CHATBI_JWT_TTL_SECONDS` | `3600` | 访问令牌有效期 |
-| `CHATBI_DEMO_HEADER_ENABLED` | `false` | 是否启用 `X-ChatBI-User` 演示身份头 |
-| `CHATBI_MCP_SERVICE_TOKEN` | 空 | MCP 服务令牌；空表示服务身份禁用 |
+| `CHATBI_BOOTSTRAP_ADMIN_PASSWORD` | 空 | docker/prod 首启必需（≥12 位）；替换种子管理员口令并禁用其余种子账号的密码登录 |
+| `CHATBI_DEMO_HEADER_ENABLED` | `false` | 是否启用 `X-ChatBI-User` 演示身份头；docker/prod 下为 `true` 会启动失败 |
+| `CHATBI_MCP_SERVICE_TOKEN` | 空 | MCP 服务令牌；空表示服务身份禁用，仅可用于 `/api/chat/**` |
 | `CHATBI_MCP_SERVICE_USER` | `mcp-service` | 服务身份对应的数据库账号 |
 | `CHATBI_RATE_LIMIT_ENABLED` | `true` | 是否启用限流 |
 | `CHATBI_RATE_LIMIT_QPM` | `10` | 问数接口每用户每分钟请求数 |
 | `CHATBI_RATE_LIMIT_BURST` | `0` | 突发容量，0 表示等于 QPM |
 | `CHATBI_LOGIN_RATE_LIMIT_QPM` | `20` | 登录接口每 IP 每分钟请求数 |
+| `CHATBI_TRUST_FORWARDED_HEADERS` | `false` | 是否信任 `X-Forwarded-For` / `X-Real-IP`；仅在可信代理覆盖这些头时开启 |
+| `CHATBI_LOGIN_FAILURE_THRESHOLD` | `5` | 同一用户名连续失败多少次后临时锁定 |
+| `CHATBI_LOGIN_FAILURE_WINDOW_SECONDS` | `900` | 失败计数窗口 |
+| `CHATBI_LOGIN_LOCK_SECONDS` | `900` | 锁定时长 |
 | `CHATBI_DAILY_TOKEN_LIMIT` | `2000000` | 每用户每日 Token 配额（0 关闭） |
 | `CHATBI_DAILY_COST_LIMIT_USD` | `5.00` | 每用户每日模型成本配额（0 关闭） |
+| `CHATBI_QUOTA_RESERVE_TOKENS` | `4096` | 每个在途请求预留的 Token，完成后释放 |
+| `CHATBI_QUOTA_RESERVE_COST_USD` | `0.05` | 每个在途请求预留的成本，完成后释放 |
 | `CHATBI_ALLOWED_ORIGINS` | `http://localhost:5174,http://localhost:8088` | CORS 白名单 |
 | `CHATBI_QUERY_MAX_ROWS` | `500` | 最大返回行数 |
 | `CHATBI_QUERY_TIMEOUT_SECONDS` | `8` | 查询超时 |
@@ -408,26 +423,33 @@ npx -y supergateway \
 | `SERVICE` | MCP 服务身份，按服务账号的行级权限执行，永不具备 ADMIN |
 
 - `POST /api/auth/login` 公开；其余业务接口一律要求 JWT，匿名访问返回 401。
+- `POST /api/auth/password` 允许已登录用户凭原密码修改自己的口令（新口令至少 12 位，且不能使用演示口令）。
 - `GET /api/audit?all=true`、`GET /api/audit/stats?all=true` 仅 ADMIN。
 - 令牌中的角色不直接授权：每次请求都会从数据库重新读取 `enabled` 与 `roles`，因此禁用账号或调整角色立即生效。
-- `/actuator/health` 公开用于探活；`/actuator/prometheus` 等其他 actuator 端点需要认证，生产环境建议仅在内网暴露。
+- `roles` 列是角色的事实来源；`is_admin` 仅在 `roles` 为空时作为历史数据兜底，不会把显式 `VIEWER` 提升为 ADMIN。
+- 服务令牌只接受 `/api/chat/**` 路径，其他路径直接返回 `403 SERVICE_SCOPE_FORBIDDEN`。
+- `/actuator/health` 公开用于探活且详情为 `never`；`/actuator/prometheus`、`/actuator/metrics` 等其他 actuator 端点仅 ADMIN。`/api/health/**` 需要登录。
 
 ### 9.2 限流与配额
 
 - 问数接口 `POST /api/chat/query` 默认每用户 10 QPM，令牌桶允许短时突发；超限返回 `429 RATE_LIMITED` 与 `Retry-After`。
-- 登录接口按客户端 IP 限流，降低口令爆破风险。
-- 每日配额从 `query_audit` 聚合当日 Token 与成本，超限返回 429；审计库不可用时返回 `503 QUOTA_UNAVAILABLE`（fail closed）。
-- 当前限流与配额检查是**单实例内存实现**。部署多个后端副本时，必须将令牌桶与配额缓存迁移到 Redis（或网关层限流），否则每个副本独立计数，实际额度会被放大。
+- 登录接口按客户端 IP 限流；默认不信任 `X-Forwarded-For` / `X-Real-IP`，只有显式设置 `CHATBI_TRUST_FORWARDED_HEADERS=true`（且代理会覆盖这些头）时才使用。
+- 同一用户名连续失败达到阈值后临时锁定，返回 `429 LOGIN_TEMPORARILY_LOCKED`；成功登录会清零。锁定按用户名计数，可能被用于定向锁定，阈值与时长可配置（阈值设为 0 可关闭）。
+- 每日配额先读取 `query_audit` 的当日用量，再通过 Redis Lua 原子预留本次请求的 Token/成本，完成后释放预留。并发请求不会同时看到同一份剩余额度，实际用量仍以审计表为准。
+- 审计库或 Redis 不可用时返回 `503 QUOTA_UNAVAILABLE`（fail closed）。
+- 令牌桶、登录失败计数与预留额度都依赖单实例内存或 Redis；多副本部署时令牌桶与登录锁仍需迁移到共享存储（或网关层），否则每个副本独立计数。
 
 ### 9.3 生产上线清单
 
-1. 设置高强度 `CHATBI_JWT_SECRET`（≥32 字节），不要使用仓库默认值。生产 profile 缺失或过短会直接启动失败。
-2. 保持 `CHATBI_DEMO_HEADER_ENABLED=false`；确需演示时仅在隔离环境开启，并关注启动告警。
-3. 设置随机 `CHATBI_MCP_SERVICE_TOKEN`，仅在后端与 MCP Server 之间共享；不需要 MCP 时保持为空。
-4. 修改数据库密码与只读账号密码，限制 5432 / 6379 / 8080 的网络暴露。
-5. 生产环境关闭 Swagger（`springdoc`）或仅在内网开放；`/actuator/health` 之外的 actuator 端点需要认证。
-6. 修改或停用演示账号密码（`lisi` / `zhangsan` / `wangwu` 初始密码 `ChatBI@2026`）。
-7. 多副本部署时启用 Redis 共享限流与配额。
+1. 用 `openssl rand -base64 48` 生成 `CHATBI_JWT_SECRET`（≥32 字节）。docker/prod 下密钥为空、过短或仍为 `local-dev-only...` 都会直接启动失败。
+2. 首启设置 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`（≥12 位）。仍有种子演示口令且未设置该项时启动失败；启动后应立即通过 `POST /api/auth/password` 再次改密。
+3. 保持 `CHATBI_DEMO_HEADER_ENABLED=false`；docker/prod 下设为 `true` 会直接启动失败。
+4. 设置随机 `CHATBI_MCP_SERVICE_TOKEN`，仅在后端与 MCP Server 之间共享；不需要 MCP 时保持为空。服务令牌只能访问 `/api/chat/**`。
+5. 修改数据库密码与只读账号密码，限制 5432 / 6379 / 8080 的网络暴露。
+6. 生产环境关闭 Swagger（`springdoc`）或仅在内网开放；actuator 仅放行 `/actuator/health`，其余端点仅 ADMIN。
+7. 只有在前置代理会覆盖 `X-Forwarded-For` / `X-Real-IP` 时才设置 `CHATBI_TRUST_FORWARDED_HEADERS=true`。
+8. 多副本部署时把令牌桶、登录失败计数迁移到 Redis 或网关层；配额预留已使用 Redis。
+9. 确认 `zhangsan` / `wangwu` 等演示账号的密码登录已禁用，或按组织策略重新分配口令。
 
 > 生产环境务必修改数据库密码、关闭演示身份头、限制网络暴露，并为只读账号配置最小权限。
 
@@ -469,9 +491,9 @@ npx -y supergateway \
 - SQL 安全策略只允许单层、单分支 SELECT，禁止 CTE / 子查询 / UNION / INTERSECT / EXCEPT；复杂分析需改写为 `GROUP BY` / `HAVING` 聚合，或按需扩展策略（如引入受控 CTE）。
 - 语义层由后端维护 API 管理，前端目前只有只读查看与刷新索引，没有可视化编辑界面。
 - 向量检索使用离线哈希嵌入，不具备真实语义泛化能力；替换为托管 Embedding 后效果更好，但需迁移 `vector(512)` 列并重建索引。
-- 认证为用户名密码 + 无状态 JWT，尚未接入 OAuth2 / OIDC / 企业 SSO，也没有令牌吊销列表；缩短 TTL 或轮换 `CHATBI_JWT_SECRET` 可使全部令牌立即失效。
-- 限流与每日配额为单实例内存实现；多副本部署需要 Redis 或网关层共享计数。
-- 初始演示密码 `ChatBI@2026` 仅用于本地开发，生产环境必须修改或禁用这些账号。
+- 认证为用户名密码 + 无状态 JWT，尚未接入 OAuth2 / OIDC / 企业 SSO，也没有令牌吊销列表；缩短 TTL 或轮换 `CHATBI_JWT_SECRET` 可使全部令牌立即失效。改密入口为 `POST /api/auth/password`，前端暂未提供改密页面。
+- 限流（令牌桶）与登录失败锁定为单实例内存实现；配额预留已使用 Redis，但多副本仍需把令牌桶与登录锁迁移到共享存储。
+- 演示口令 `ChatBI@2026` 仅用于未启用 docker/prod profile 的本机演示；生产首启必须提供 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`，否则启动失败。
 - 评测仅限管理员运行，且是规则基线口径；评测集与演示数据为合成数据，指标口径用于展示方法而非业务结论。
 
 ---

@@ -20,11 +20,13 @@ import java.util.List;
 /**
  * Shared-secret identity for the stdio MCP server. The resulting principal is
  * deliberately stripped of ADMIN even if the referenced account is
- * misconfigured; service access is read-only and limited to chat queries.
+ * misconfigured; service access is read-only and limited to the chat query
+ * endpoint.
  */
 public class ServiceTokenAuthenticationFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-ChatBI-Service-Token";
+    private static final String ALLOWED_PATH_PREFIX = "/api/chat/";
 
     private final String configuredToken;
     private final String serviceUsername;
@@ -48,6 +50,14 @@ public class ServiceTokenAuthenticationFilter extends OncePerRequestFilter {
         String presented = request.getHeader(HEADER);
         if (presented == null || SecurityContextHolder.getContext().getAuthentication() != null) {
             chain.doFilter(request, response);
+            return;
+        }
+        String path = request.getRequestURI();
+        if (path == null || !path.startsWith(ALLOWED_PATH_PREFIX)) {
+            metrics.authenticationFailure("service_token_scope");
+            errorWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,
+                    "SERVICE_SCOPE_FORBIDDEN",
+                    "服务令牌仅可用于问数接口");
             return;
         }
         if (configuredToken == null || configuredToken.isBlank()) {

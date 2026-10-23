@@ -174,8 +174,13 @@ class SecurityIntegrationTest {
         AppUser viewer = user("zhangsan", "VIEWER", true, false);
         useUser(viewer);
         String token = token(viewer, 60);
-        char last = token.charAt(token.length() - 1);
-        String tampered = token.substring(0, token.length() - 1) + (last == 'a' ? 'b' : 'a');
+        // Flip the first signature character: the last Base64url character can
+        // differ only in padding bits and decode to the same signature.
+        int signatureStart = token.lastIndexOf('.') + 1;
+        char first = token.charAt(signatureStart);
+        String tampered = token.substring(0, signatureStart)
+                + (first == 'a' ? 'b' : 'a')
+                + token.substring(signatureStart + 1);
 
         mockMvc.perform(get("/api/conversations/probe")
                         .header("Authorization", "Bearer " + tampered))
@@ -207,24 +212,47 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    void serviceTokenAuthenticatesButCannotUseAdminApis() throws Exception {
+    void serviceTokenIsLimitedToChatQueries() throws Exception {
         AppUser service = user("mcp-service", "ADMIN", true, true);
         useUser(service);
 
-        mockMvc.perform(get("/api/conversations/probe")
+        mockMvc.perform(post("/api/chat/query")
                         .header("X-ChatBI-Service-Token", "service-token-123"))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(get("/api/conversations/probe")
+                        .header("X-ChatBI-Service-Token", "service-token-123"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SERVICE_SCOPE_FORBIDDEN"));
+
         mockMvc.perform(get("/api/users/probe")
                         .header("X-ChatBI-Service-Token", "service-token-123"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SERVICE_SCOPE_FORBIDDEN"));
     }
 
     @Test
     void invalidServiceTokenIsRejected() throws Exception {
-        mockMvc.perform(get("/api/conversations/probe")
+        mockMvc.perform(post("/api/chat/query")
                         .header("X-ChatBI-Service-Token", "wrong-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_SERVICE_TOKEN"));
+    }
+
+    @Test
+    void actuatorMetricsRequireAdmin() throws Exception {
+        AppUser viewer = user("zhangsan", "VIEWER", true, false);
+        useUser(viewer);
+
+        mockMvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/prometheus").header("Authorization", bearer(viewer)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void healthDetailsEndpointsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/health/ai"))
+                .andExpect(status().isUnauthorized());
     }
 }

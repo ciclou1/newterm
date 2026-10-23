@@ -23,8 +23,10 @@ public final class UserRoles {
     }
 
     /**
-     * Resolve effective roles. {@code is_admin} is kept as a compatibility
-     * switch for the original demo data and always implies ADMIN.
+     * Resolve effective roles. The {@code roles} column is the source of truth.
+     * {@code is_admin} is only a compatibility fallback for rows that predate
+     * the column (blank roles); it must not override an explicit demotion such
+     * as {@code roles=VIEWER}.
      */
     public static List<String> of(AppUser user) {
         Set<String> roles = new LinkedHashSet<>();
@@ -34,7 +36,7 @@ public final class UserRoles {
                     .filter(value -> !value.isBlank() && KNOWN.contains(value))
                     .forEach(roles::add);
         }
-        if (Boolean.TRUE.equals(user.getIsAdmin())) {
+        if (roles.isEmpty() && Boolean.TRUE.equals(user.getIsAdmin())) {
             roles.add(ADMIN);
         }
         if (roles.isEmpty()) {
