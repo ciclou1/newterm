@@ -27,7 +27,9 @@ public record AgentResult(
         Performance performance,
         SchemaInfo schema,
         Failure failure,
-        List<Attempt> trace) {
+        List<Attempt> trace,
+        boolean degraded,
+        String degradedReason) {
 
     public boolean ok() {
         return "OK".equals(status);
@@ -76,11 +78,13 @@ public record AgentResult(
 
     public static AgentResult clarification(String question, SqlGeneration.Clarification clarification,
                                             String mode, SchemaInfo schema, Performance performance,
-                                            Usage usage, List<Attempt> trace) {
+                                            Usage usage, List<Attempt> trace,
+                                            boolean degraded, String degradedReason) {
         return new AgentResult("CLARIFY", question, mode, null, null, null, 0,
                 new Clarification(clarification.question(), clarification.options()),
                 GuardInfo.empty(), QueryResult.empty(), usage, performance, schema,
-                new Failure("clarify", "CLARIFY", clarification.question()), trace);
+                new Failure("clarify", "CLARIFY", clarification.question()), trace,
+                degraded, degradedReason);
     }
 
     public static AgentResult failure(String status, String question, String mode, String generatedSql,
@@ -88,8 +92,17 @@ public record AgentResult(
                                       GuardInfo guard, QueryResult result, Usage usage,
                                       Performance performance, SchemaInfo schema, Failure failure,
                                       List<Attempt> trace) {
+        return failure(status, question, mode, generatedSql, finalSql, explanation, clarification,
+                guard, result, usage, performance, schema, failure, trace, false, null);
+    }
+
+    public static AgentResult failure(String status, String question, String mode, String generatedSql,
+                                      String finalSql, String explanation, Clarification clarification,
+                                      GuardInfo guard, QueryResult result, Usage usage,
+                                      Performance performance, SchemaInfo schema, Failure failure,
+                                      List<Attempt> trace, boolean degraded, String degradedReason) {
         return new AgentResult(status, question, mode, generatedSql, finalSql, explanation,
                 clarification == null ? 0 : 0.4, clarification, guard, result, usage,
-                performance, schema, failure, trace);
+                performance, schema, failure, trace, degraded, degradedReason);
     }
 }

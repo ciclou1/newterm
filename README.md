@@ -12,13 +12,13 @@
 
 | 模块 | 实现 |
 |---|---|
-| 语义层 | 6 个语义视图、99 个字段、20 个指标、32 组同义词、88 个枚举标签、20 条 Few-shot、行级权限，全部落库并由管理员维护 |
-| Schema Linking | 同义词扩展 + BM25 + 512 维哈希向量（pgvector）+ Few-shot 检索，先裁剪 Schema 再生成 SQL |
-| NL2SQL Agent | 生成 → JSqlParser AST 校验 → 只读执行 → 报错回灌自修复（最多 2 次） |
-| SQL 安全 | 单层 SELECT、表白名单、DDL/DML 拦截、危险函数黑名单、只读账号、EXPLAIN 代价预估、超时/行数限制、审计日志 |
-| 行级权限 | 基于管理员配置的谓词注入 AST，不依赖模型输出；按用户/表/字段/允许值生效 |
+| 语义层 | 6 个语义视图、99 个字段、20 个指标、32 组同义词、88 个枚举标签、20 条 Few-shot、行级权限，全部落库；后端提供维护 API，前端为只读查看（可刷新索引） |
+| Schema Linking | 同义词扩展 + BM25 + 512 维哈希特征向量（pgvector，非语义 embedding）+ Few-shot 检索，先裁剪 Schema 再生成 SQL |
+| NL2SQL Agent | 生成 → JSqlParser AST 校验 → 只读执行 → 错误回灌修复（最多 2 次）；结构违规可修复，写操作/系统表等硬策略直接拒绝 |
+| SQL 安全 | 单层 SELECT（禁止 CTE/子查询/UNION/INTERSECT/EXCEPT）、表白名单、DDL/DML 拦截、危险函数黑名单、只读账号、EXPLAIN 代价预估、超时/行数限制、审计日志 |
+| 行级权限 | 基于管理员配置的谓词注入 AST，不依赖模型输出；按用户/表/字段/允许值生效，字段名做标识符与语义层双重校验 |
 | 结果呈现 | 表格、ECharts 图表、自然语言结论、多轮追问、口径澄清、SQL 与安全链路溯源 |
-| 评测 | 120 题执行准确率评测集，金标 SQL 对比、分类统计、异步任务 |
+| 评测 | 120 题规则基线评测集（管理员专用），金标 SQL 对比、分类统计、异步任务，记录模型/prompt/数据集/commit |
 | 可观测 | Micrometer + Prometheus，记录状态、延迟、Token 与成本；查询审计与用户反馈 |
 | MCP | 将“问数”封装为 `ask_data` 工具，stdio JSON-RPC，可直接接入 Claude Desktop / Dify |
 | 身份与权限 | 用户名密码登录 → HS256 JWT；ADMIN / MANAGER / VIEWER 角色；管理员接口默认仅 ADMIN 可访问 |
@@ -40,7 +40,7 @@
 
 ```
 ┌──────────────────────────── Vue 3 + ECharts ────────────────────────────┐
-│  问数聊天  语义层维护  评测中心  审计看板        亮/暗主题 · 多轮追问 · 图表溯源  │
+│  问数聊天  语义层查看  评测中心  审计看板        亮/暗主题 · 多轮追问 · 图表溯源  │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                 │ /api（nginx / Vite 代理）
 ┌───────────────────────────────▼─────────────────────────────────────────┐
@@ -69,7 +69,7 @@
 - **两套数据源**：`dataSource` 用于元数据/审计/会话（Druid），`queryDataSource` 使用只读账号 `chatbi_ro` 执行模型生成的 SQL。
 - **语义层是核心资产**：模型只能看到裁剪后的表、字段、指标、同义词与枚举；物理表对模型不可见。
 - **权限独立于模型**：行级谓词在 AST 上注入，模型输出无法绕过。
-- **离线可演示**：`CHATBI_AI_ENABLED=false` 时使用确定性的 `DemoSqlGenerator`，无需 API Key 即可完整演示；开启后走 OpenAI 兼容接口。
+- **离线可演示**：`CHATBI_AI_ENABLED=false` 时使用确定性的 `DemoSqlGenerator`，无需 API Key 即可完整演示；开启后走 OpenAI 兼容接口。AI 已启用但生成失败时默认返回 `ERROR`，**不会静默回退到规则引擎**；只有显式设置 `CHATBI_AI_ALLOW_DEMO_FALLBACK=true` 才允许降级，并在响应中标记 `degraded=true` 与原因。
 
 ---
 
@@ -133,10 +133,12 @@ export CHATBI_JWT_SECRET='local-dev-only-secret-change-me-0123456789abcdef'
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 81 个测试（含 JWT / RBAC / 限流 / 配额）
+./mvnw -pl backend test                 # 101 个测试（含 JWT / RBAC / 限流 / 配额 / P0 回归）
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
+
+以上命令与前端构建同样在 `.github/workflows/ci.yml` 中执行（JDK 21 + Node 20，含 Maven/npm 缓存）。
 
 ---
 
@@ -170,8 +172,8 @@ cd frontend && npm run build            # vue-tsc + Vite 生产构建
 
 - **登录**：用户名密码登录，令牌保存在浏览器本地；退出登录清空会话，401 时自动回到登录页。
 - **问数**：聊天式交互，SQL / 安全链路可展开；图表支持亮暗主题。
-- **语义层**：查看表、字段、指标、同义词、枚举、Few-shot 与行级权限；管理员可维护并刷新索引。
-- **评测**：管理员可运行 120 题评测，查看总体准确率、分类准确率与逐题 SQL 对比。
+- **语义层**：查看表、字段、指标、同义词、枚举、Few-shot 与行级权限；后端提供维护 API，**前端当前为只读查看，仅支持刷新索引**。
+- **评测**：管理员可运行 120 题规则基线评测，查看总体准确率、分类准确率与逐题 SQL 对比；仅管理员可运行，结果记录用户、模型、prompt 版本、数据集 hash 与代码 commit。
 - **审计**：查询明细、状态、耗时、Token、成本，管理员可切换全局视图。
 
 ---
@@ -190,7 +192,7 @@ Schema Linking 流程：
 4. **Few-shot 检索**：按问题相似度选取示例 SQL。
 5. **Schema 裁剪**：只把命中的表/字段/指标/枚举交给模型，降低幻觉与 Token 成本。
 
-`HashingEmbeddingModel` 是离线确定性实现，保留了清晰的替换点：生产环境可换成 Spring AI `EmbeddingModel`（如 bge-m3 / text-embedding-3-large），不影响上层流程。
+`HashingEmbeddingModel` 是离线确定性 Feature Hashing 实现，**不是语义 embedding**：它只能匹配字面相近的 token，语义泛化主要由同义词表和 BM25 承担。生产环境可换成 Spring AI `EmbeddingModel`（如 bge-m3 / text-embedding-3-large），但维度变化需要新增迁移修改 `vector(512)` 列、重建 HNSW 索引并全量重算，不能直接“无感替换”。
 
 ### 5.2 NL2SQL Agent
 
@@ -213,9 +215,11 @@ Schema Linking 流程：
  呈现    报错回灌，自修复（最多 2 次）
 ```
 
-- 生成结果必须是单条 `SELECT`。
-- 修复提示包含数据库原始错误、当前 Schema 与上一次 SQL。
-- 达到重试上限后返回 `ERROR`，并保留失败阶段与信息。
+- 生成结果必须是单条 `SELECT`，禁止 CTE/子查询/UNION/INTERSECT/EXCEPT。
+- 结构违规（CTE/子查询/UNION、未知表/字段、语法错误）进入有界修复循环，并附带明确的结构纠错提示（改写为单层 SELECT + GROUP BY/HAVING）。
+- 写操作、危险函数、系统 schema、多语句、`SELECT INTO`、锁定读、行级权限拒绝属于硬策略，直接返回 `BLOCKED`，不交给模型重试。
+- AI 已启用但生成失败时默认返回 `ERROR`，不静默切换规则引擎；只有 `CHATBI_AI_ALLOW_DEMO_FALLBACK=true` 才允许降级，响应会带 `degraded=true` 与原因。
+- 修复提示包含数据库原始错误、当前 Schema 与上一次 SQL；达到重试上限后返回 `ERROR`，并保留失败阶段与信息。
 - 多轮对话会继承上一轮的时间口径、过滤条件与主题；“那去年呢”只改时间，“那订单数呢”保留其余条件。
 
 ### 5.3 SQL 安全链路
@@ -223,16 +227,16 @@ Schema Linking 流程：
 | 检查 | 行为 |
 |---|---|
 | 空 SQL / 超长 | 拒绝 |
-| 多语句 / 子查询 / CTE | 拒绝，只允许单层 SELECT |
+| 多语句 / 子查询 / CTE / UNION / INTERSECT / EXCEPT | 拒绝，只允许单层、单分支 SELECT |
 | DDL / DML / 管理语句 | 关键字 + AST 双重拒绝 |
 | 系统 schema | 拒绝 `information_schema`、`pg_catalog`、`pg_toast` |
 | 危险函数 | 拒绝 `pg_sleep`、`pg_read_file`、`dblink`、`COPY` 等 |
 | 表白名单 | 仅允许语义层注册的视图 |
-| 行级权限 | 按管理员规则向 AST 注入 `AND` 谓词；无匹配规则则拒绝 |
+| 行级权限 | 按管理员规则向 AST 注入 `AND` 谓词；列名必须是合法标识符且存在于语义层，否则拒绝；无匹配规则则拒绝 |
 | EXPLAIN 代价 | 超过阈值拒绝执行 |
 | 执行超时 / 行数 | 8s 超时、最多 500 行 |
-| 数据库账号 | `chatbi_ro` 只读角色 |
-| 审计 | 每次问数记录 SQL、状态、阶段、耗时、Token、成本、Schema 命中 |
+| 数据库账号 | `chatbi_ro` 只读角色，仅授予 6 个 `v_*` 视图，元数据/审计/物理表不可读 |
+| 审计 | 每次问数记录 SQL、状态、阶段、耗时、Token、成本、Schema 命中；审计写入失败时 fail-closed，不返回查询结果 |
 
 被拦截的请求同样写入审计，并在前端展示失败阶段与原因。
 
@@ -253,11 +257,14 @@ Schema Linking 流程：
 
 评测方法（执行准确率，Execution Accuracy）：
 
-1. 在金标 SQL 与实际生成 SQL 上分别执行，比较结果集而非 SQL 文本。
-2. 校验状态（澄清题必须返回 `CLARIFY`）、行数、列数。
-3. 按值集合做列匹配，行顺序不敏感。
-4. 数值统一规范化后比较（展示保留 2 位、比较保留 6 位），避免精度噪声。
-5. 按分类汇总准确率，异步任务轮询进度。
+1. 金标 SQL 由只读账号执行一次，得到基线结果集。
+2. 被测链路只跑一遍：直接复用问数 Agent 返回的 `result` 结果集，**不再二次执行生成的 SQL**，从而不会绕过 EXPLAIN 代价门禁、审计与行级权限。
+3. 校验状态（澄清题必须返回 `CLARIFY`）、行数与列数。
+4. 按值集合做列匹配，行顺序不敏感。
+5. 数值统一规范化后比较（展示保留 2 位、比较保留 6 位），避免精度噪声。
+6. 按分类汇总准确率，异步任务轮询进度。
+
+评测入口仅限管理员（`POST /api/eval/run` 在 Controller 与 Service 两层都校验 `requireAdmin`）。原因是金标 SQL 不注入行级权限、返回全量数据，如果允许普通用户运行，就会成为绕过行级权限读取全量数据的旁路。每个任务记录运行用户、模型名、Prompt 版本号（`PromptBuilder.VERSION`）、评测集版本与 SHA-256、代码 commit（`GIT_COMMIT` / `GITHUB_SHA`），便于复现与横向对比。
 
 运行方式：
 
@@ -275,7 +282,7 @@ curl -X POST http://localhost:8080/api/eval/run \
 
 也可以在前端「评测」页运行全量评测。
 
-> **口径说明**：仓库当前默认 `CHATBI_AI_ENABLED=false`，Demo 规划器在 120 题上达到 **120/120（100%）**。这验证的是语义层、执行链路、权限与评测框架本身，**不代表真实大模型在开放问题上的准确率**。接入真实模型后应重新跑同一评测集，并以结果为准。
+> **口径说明**：仓库当前默认 `CHATBI_AI_ENABLED=false`，Demo 规划器在 120 题上的结果是 **规则基线 120/120（100%）**。这只验证语义层、执行链路、权限与评测框架本身，**不代表真实大模型在开放问题上的准确率**。接入真实模型后应重新跑同一评测集，并以结果为准。
 
 ---
 
@@ -368,6 +375,7 @@ npx -y supergateway \
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `CHATBI_AI_ENABLED` | `false` | 是否启用真实大模型 |
+| `CHATBI_AI_ALLOW_DEMO_FALLBACK` | `false` | AI 启用但生成失败时是否允许降级到规则引擎；开启后响应标记 `degraded=true` |
 | `OPENAI_API_KEY` | 空 | OpenAI 兼容 API Key |
 | `CHATBI_AI_BASE_URL` | `https://api.openai.com` | 兼容网关地址 |
 | `CHATBI_AI_MODEL` | `gpt-4.1-mini` | 模型名称 |
@@ -456,13 +464,15 @@ npx -y supergateway \
 
 ## 11. 已知边界
 
-- 默认使用确定性 Demo 规划器，适合离线演示与回归；真实模型效果需接入后重测。
-- SQL 安全策略只允许单层 SELECT，复杂分析需改写或扩展策略（如受控 CTE）。
-- 向量检索使用离线哈希嵌入，不具备真实语义泛化能力；替换为托管 Embedding 后效果更好。
+- 默认使用确定性 Demo 规划器，适合离线演示与回归；它是**规则基线**，不代表大模型能力，真实模型效果需接入后重测。
+- AI 启用后生成失败默认返回 `ERROR`，不会静默降级；如需兜底须显式开启 `CHATBI_AI_ALLOW_DEMO_FALLBACK`，并在响应中标记 `degraded`。
+- SQL 安全策略只允许单层、单分支 SELECT，禁止 CTE / 子查询 / UNION / INTERSECT / EXCEPT；复杂分析需改写为 `GROUP BY` / `HAVING` 聚合，或按需扩展策略（如引入受控 CTE）。
+- 语义层由后端维护 API 管理，前端目前只有只读查看与刷新索引，没有可视化编辑界面。
+- 向量检索使用离线哈希嵌入，不具备真实语义泛化能力；替换为托管 Embedding 后效果更好，但需迁移 `vector(512)` 列并重建索引。
 - 认证为用户名密码 + 无状态 JWT，尚未接入 OAuth2 / OIDC / 企业 SSO，也没有令牌吊销列表；缩短 TTL 或轮换 `CHATBI_JWT_SECRET` 可使全部令牌立即失效。
 - 限流与每日配额为单实例内存实现；多副本部署需要 Redis 或网关层共享计数。
 - 初始演示密码 `ChatBI@2026` 仅用于本地开发，生产环境必须修改或禁用这些账号。
-- 评测集与演示数据为合成数据，指标口径用于展示方法而非业务结论。
+- 评测仅限管理员运行，且是规则基线口径；评测集与演示数据为合成数据，指标口径用于展示方法而非业务结论。
 
 ---
 

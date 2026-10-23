@@ -50,11 +50,13 @@ public class EvaluationController {
     @PostMapping("/run")
     public EvaluationService.EvalJobView run(@RequestBody(required = false) RunRequest request) {
         AppUser user = currentUserService.requireAdminUser();
-        RunRequest body = request == null ? new RunRequest(null, null, null) : request;
-        return evaluationService.start(body.category(), body.limit(),
-                body.user() == null || body.user().isBlank() ? user.getUsername() : body.user());
+        RunRequest body = request == null ? new RunRequest(null, null) : request;
+        // Never let the caller substitute a different (possibly restricted)
+        // evaluation user: golden SQL is unfiltered, so the run must use the
+        // authenticated admin.
+        return evaluationService.start(body.category(), body.limit(), user.getUsername());
     }
 
-    public record RunRequest(String category, Integer limit, String user) {
+    public record RunRequest(String category, Integer limit) {
     }
 }

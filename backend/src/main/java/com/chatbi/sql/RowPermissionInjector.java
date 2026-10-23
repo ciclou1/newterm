@@ -2,6 +2,7 @@ package com.chatbi.sql;
 
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.RowPermission;
+import com.chatbi.domain.entity.SemColumn;
 import com.chatbi.semantic.SemanticSnapshot;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Expression;
@@ -35,6 +36,30 @@ import java.util.regex.Pattern;
 public class RowPermissionInjector {
 
     private static final Pattern NUMERIC = Pattern.compile("-?\\d+(\\.\\d+)?");
+    /**
+     * Metadata is not trusted either: permission column names come from the
+     * admin API, so they must look like plain lower-case SQL identifiers and
+     * must exist in the semantic layer before they are spliced into a WHERE
+     * clause. Without this an admin-side typo/injection could poison every
+     * generated query.
+     */
+    private static final Pattern IDENTIFIER = Pattern.compile("[a-z_][a-z0-9_]*");
+
+    public static boolean isValidIdentifier(String value) {
+        return value != null && IDENTIFIER.matcher(value).matches();
+    }
+
+    public static boolean isKnownColumn(SemanticSnapshot snapshot, String tableName, String columnName) {
+        if (tableName == null || !isValidIdentifier(columnName)) {
+            return false;
+        }
+        String normalized = columnName.toLowerCase(Locale.ROOT);
+        return snapshot.columnsOf(tableName.toLowerCase(Locale.ROOT)).stream()
+                .map(SemColumn::getColumnName)
+                .filter(java.util.Objects::nonNull)
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .anyMatch(normalized::equals);
+    }
 
     public Injection inject(String sql, AppUser user, SemanticSnapshot snapshot) {
         if (Boolean.TRUE.equals(user.getIsAdmin())) {
@@ -54,7 +79,7 @@ public class RowPermissionInjector {
             }
 
             List<SqlGuardResult.RowScope> scopes = new ArrayList<>();
-            InjectionError error = apply(select, user, globalRules, scopes);
+            InjectionError error = apply(select, user, globalRules, snapshot, scopes);
             if (error != null) {
                 return Injection.denied(error.code, error.message);
             }
@@ -66,6 +91,7 @@ public class RowPermissionInjector {
 
     private InjectionError apply(Select select, AppUser user,
                                  Map<String, List<RowPermission>> globalRules,
+                                 SemanticSnapshot snapshot,
                                  List<SqlGuardResult.RowScope> scopes) {
         if (select instanceof PlainSelect plain) {
             List<Table> tables = new ArrayList<>();
@@ -91,7 +117,14 @@ public class RowPermissionInjector {
                 String qualifier = table.getAlias() != null ? table.getAlias().getName() : table.getName();
                 List<String> predicates = new ArrayList<>();
                 for (RowPermission permission : mine) {
-                    String predicate = predicate(qualifier, permission);
+                    String column = permission.getColumnName() == null
+                            ? null : permission.getColumnName().trim().toLowerCase(Locale.ROOT);
+                    if (!isKnownColumn(snapshot, tableName, column)) {
+                        return new InjectionError("ROW_PERMISSION_INVALID_COLUMN",
+                                "行级权限列名非法或不在语义层列定义中：" + tableName + "."
+                                        + permission.getColumnName() + "，已拒绝执行");
+                    }
+                    String predicate = predicate(qualifier, column, permission);
                     if (predicate == null) {
                         return new InjectionError("ROW_LEVEL_DENIED",
                                 "行级权限配置为空，已拒绝访问 " + tableName);
@@ -114,7 +147,7 @@ public class RowPermissionInjector {
         }
         if (select instanceof SetOperationList union) {
             for (Select child : union.getSelects()) {
-                InjectionError error = apply(child, user, globalRules, scopes);
+                InjectionError error = apply(child, user, globalRules, snapshot, scopes);
                 if (error != null) {
                     return error;
                 }
@@ -130,7 +163,7 @@ public class RowPermissionInjector {
         }
     }
 
-    private String predicate(String qualifier, RowPermission permission) {
+    private String predicate(String qualifier, String column, RowPermission permission) {
         if (permission.getAllowedValues() == null || permission.getAllowedValues().isBlank()) {
             return null;
         }
@@ -142,7 +175,7 @@ public class RowPermissionInjector {
         if (values.isBlank()) {
             return null;
         }
-        return qualifier + "." + permission.getColumnName() + " IN (" + values + ")";
+        return qualifier + "." + column + " IN (" + values + ")";
     }
 
     public record Injection(boolean allowed, String sql, String code, String message,

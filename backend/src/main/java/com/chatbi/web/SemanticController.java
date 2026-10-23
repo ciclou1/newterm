@@ -17,6 +17,7 @@ import com.chatbi.semantic.SemanticCatalog;
 import com.chatbi.semantic.SemanticIndexer;
 import com.chatbi.semantic.SemanticSnapshot;
 import com.chatbi.service.CurrentUserService;
+import com.chatbi.sql.RowPermissionInjector;
 import com.chatbi.sql.SqlAstValidator;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -34,6 +35,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -222,6 +224,12 @@ public class SemanticController {
         if (catalog.snapshot().table(request.tableName()).isEmpty()) {
             throw ChatBiException.badRequest("INVALID_TABLE", "表不在语义层中");
         }
+        String column = request.columnName() == null
+                ? null : request.columnName().trim().toLowerCase(Locale.ROOT);
+        if (!RowPermissionInjector.isKnownColumn(catalog.snapshot(), request.tableName(), column)) {
+            throw ChatBiException.badRequest("INVALID_PERMISSION_COLUMN",
+                    "行级权限列必须是语义层已注册的字段名（小写标识符）：" + request.columnName());
+        }
         RowPermission permission = request.id() == null ? new RowPermission()
                 : permissionMapper.selectById(request.id());
         if (permission == null) {
@@ -229,7 +237,7 @@ public class SemanticController {
         }
         permission.setUserId(request.userId());
         permission.setTableName(request.tableName());
-        permission.setColumnName(request.columnName());
+        permission.setColumnName(column);
         permission.setAllowedValues(request.allowedValues());
         permission.setDescription(request.description());
         permission.setEnabled(request.enabled() == null || request.enabled());

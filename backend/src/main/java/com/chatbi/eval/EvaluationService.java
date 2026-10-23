@@ -1,8 +1,12 @@
 package com.chatbi.eval;
 
+import com.chatbi.common.ChatBiException;
+import com.chatbi.config.ChatBiProperties;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.nl2sql.AgentResult;
 import com.chatbi.nl2sql.Nl2SqlAgent;
+import com.chatbi.nl2sql.PromptBuilder;
+import com.chatbi.security.UserRoles;
 import com.chatbi.service.UserDirectory;
 import com.chatbi.sql.QueryExecutor;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -16,10 +20,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,9 +40,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Execution-accuracy evaluation. Every question is answered by the same agent
- * used by the product; its result is compared with a golden SQL result on the
- * read-only pool. Rows are compared order-insensitively, columns are matched by
- * value rather than alias, and numeric cells use a small relative tolerance.
+ * used by the product; its already-executed result set is compared with a
+ * golden SQL result on the read-only pool. Rows are compared
+ * order-insensitively, columns are matched by value rather than alias, and
+ * numeric cells use a small relative tolerance.
+ *
+ * <p>Evaluation is restricted to admins: golden SQL is executed directly and
+ * therefore does not go through row-level permission injection. Running it as a
+ * restricted user would compare a permission-filtered actual result against an
+ * unfiltered expected result and make the accuracy number meaningless.</p>
  */
 @Slf4j
 @Service
@@ -48,17 +61,21 @@ public class EvaluationService {
     private final QueryExecutor queryExecutor;
     private final UserDirectory userDirectory;
     private final ObjectMapper objectMapper;
+    private final ChatBiProperties properties;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, EvalJob> jobs = new ConcurrentHashMap<>();
     private final Map<String, QueryExecutor.QueryExecution> goldenCache = new ConcurrentHashMap<>();
     private volatile EvalDataset dataset;
+    private volatile String datasetHash = "unknown";
 
     public EvaluationService(Nl2SqlAgent agent, QueryExecutor queryExecutor,
-                             UserDirectory userDirectory, ObjectMapper objectMapper) {
+                             UserDirectory userDirectory, ObjectMapper objectMapper,
+                             ChatBiProperties properties) {
         this.agent = agent;
         this.queryExecutor = queryExecutor;
         this.userDirectory = userDirectory;
         this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     public EvalDataset dataset() {
@@ -91,6 +108,13 @@ public class EvaluationService {
         if (user == null || Boolean.FALSE.equals(user.getEnabled())) {
             throw new IllegalArgumentException("评测执行用户不存在或已禁用: " + username);
         }
+        // Evaluation is admin-only by design: the golden SQL bypasses row-level
+        // permissions, so any non-admin run would compare incomparable results.
+        // Checked against the directory as well as the HTTP layer so the rule
+        // also holds for any future non-HTTP caller.
+        if (!UserRoles.hasRole(UserRoles.of(user), UserRoles.ADMIN)) {
+            throw ChatBiException.forbidden("ADMIN_REQUIRED", "评测仅限平台管理员执行");
+        }
         List<EvalQuestion> questions = dataset().questions().stream()
                 .filter(q -> category == null || category.isBlank() || category.equals(q.category()))
                 .limit(limit == null || limit <= 0 ? Long.MAX_VALUE : limit)
@@ -98,7 +122,8 @@ public class EvaluationService {
         if (questions.isEmpty()) {
             throw new IllegalArgumentException("没有匹配的评测题");
         }
-        EvalJob job = new EvalJob(UUID.randomUUID().toString(), user, questions);
+        EvalJob job = new EvalJob(UUID.randomUUID().toString(), user, questions,
+                model(), PromptBuilder.VERSION, dataset().version(), datasetHash(), resolveCommit());
         jobs.put(job.id, job);
         if (jobs.size() > MAX_JOBS) {
             jobs.values().stream()
@@ -126,7 +151,7 @@ public class EvaluationService {
         }
     }
 
-    private CaseResult evaluate(EvalQuestion question, AppUser user) {
+    CaseResult evaluate(EvalQuestion question, AppUser user) {
         long start = System.currentTimeMillis();
         AgentResult answer;
         try {
@@ -159,7 +184,10 @@ public class EvaluationService {
         }
 
         QueryExecutor.QueryExecution expected = golden(question.goldenSql());
-        QueryExecutor.QueryExecution actual = queryExecutor.execute(generatedSql);
+        // Reuse the result set the agent already produced. Re-executing the
+        // generated SQL here would bypass the EXPLAIN cost gate and audit trail
+        // and would double the execution cost of every evaluation case.
+        QueryExecutor.QueryExecution actual = asExecution(answer);
         if (!expected.success()) {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false,
@@ -169,7 +197,7 @@ public class EvaluationService {
         if (!actual.success()) {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false,
-                    "生成 SQL 执行失败: " + actual.error(), question.goldenSql(), generatedSql,
+                    "生成 SQL 未返回可比较的结果集: " + actual.error(), question.goldenSql(), generatedSql,
                     expected.rows().size(), 0, latency, answer.mode(), "GENERATED_SQL_ERROR");
         }
         Comparison comparison = compare(expected, actual);
@@ -182,6 +210,37 @@ public class EvaluationService {
 
     private QueryExecutor.QueryExecution golden(String sql) {
         return goldenCache.computeIfAbsent(sql, queryExecutor::execute);
+    }
+
+    private QueryExecutor.QueryExecution asExecution(AgentResult answer) {
+        AgentResult.QueryResult result = answer.result();
+        if (result == null) {
+            return new QueryExecutor.QueryExecution(false, List.of(), List.of(), false, false, 0,
+                    "Agent 未返回结果集");
+        }
+        return new QueryExecutor.QueryExecution(true, result.columns(), result.rows(),
+                !result.rows().isEmpty(), result.truncated(), 0, null);
+    }
+
+    private String model() {
+        return properties.getAi().isEnabled() ? properties.getAi().getModel() : "demo-rule-engine";
+    }
+
+    private String datasetHash() {
+        dataset();
+        return datasetHash;
+    }
+
+    private String resolveCommit() {
+        for (String candidate : new String[]{
+                System.getProperty("chatbi.commit"),
+                System.getenv("GIT_COMMIT"),
+                System.getenv("GITHUB_SHA")}) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return "unknown";
     }
 
     private Comparison compare(QueryExecutor.QueryExecution expected, QueryExecutor.QueryExecution actual) {
@@ -277,11 +336,22 @@ public class EvaluationService {
 
     private EvalDataset loadDataset() {
         try (InputStream input = new ClassPathResource(DATASET).getInputStream()) {
-            EvalDataset loaded = objectMapper.readValue(input, EvalDataset.class);
-            log.info("Loaded {} evaluation questions from {}", loaded.questions().size(), DATASET);
+            byte[] bytes = input.readAllBytes();
+            datasetHash = sha256(bytes);
+            EvalDataset loaded = objectMapper.readValue(bytes, EvalDataset.class);
+            log.info("Loaded {} evaluation questions from {} (sha256={})",
+                    loaded.questions().size(), DATASET, datasetHash);
             return loaded;
         } catch (IOException e) {
             throw new IllegalStateException("无法加载评测集 " + DATASET, e);
+        }
+    }
+
+    private String sha256(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 
@@ -323,7 +393,9 @@ public class EvaluationService {
     public record CategoryStat(int total, int passed, double accuracy) {
     }
 
-    public record EvalJobView(String id, String status, String user, String createdAt, String finishedAt,
+    public record EvalJobView(String id, String status, String user, String model,
+                              String promptVersion, String datasetVersion, String datasetHash,
+                              String commit, String createdAt, String finishedAt,
                               int total, int completed, int passed, double accuracy,
                               Map<String, CategoryStat> categories, String error,
                               List<CaseResult> results) {
@@ -333,6 +405,11 @@ public class EvaluationService {
         private final String id;
         private final AppUser user;
         private final List<EvalQuestion> questions;
+        private final String model;
+        private final String promptVersion;
+        private final String datasetVersion;
+        private final String datasetHash;
+        private final String commit;
         private final List<CaseResult> results = new ArrayList<>();
         private final OffsetDateTime createdAt = OffsetDateTime.now();
         private final AtomicInteger passed = new AtomicInteger();
@@ -340,10 +417,16 @@ public class EvaluationService {
         private volatile OffsetDateTime finishedAt;
         private volatile String error;
 
-        private EvalJob(String id, AppUser user, List<EvalQuestion> questions) {
+        private EvalJob(String id, AppUser user, List<EvalQuestion> questions, String model,
+                        String promptVersion, String datasetVersion, String datasetHash, String commit) {
             this.id = id;
             this.user = user;
             this.questions = questions;
+            this.model = model;
+            this.promptVersion = promptVersion;
+            this.datasetVersion = datasetVersion;
+            this.datasetHash = datasetHash;
+            this.commit = commit;
         }
 
         private void add(CaseResult result) {
@@ -389,7 +472,9 @@ public class EvaluationService {
             Map<String, CategoryStat> categories = new LinkedHashMap<>();
             counts.forEach((category, stat) -> categories.put(category,
                     new CategoryStat(stat[0], stat[1], ratio(stat[1], stat[0]))));
-            return new EvalJobView(id, status, user.getUsername(), createdAt.toString(),
+            return new EvalJobView(id, status, user.getUsername(), model, promptVersion,
+                    datasetVersion, datasetHash, commit,
+                    createdAt.toString(),
                     finishedAt == null ? null : finishedAt.toString(), questions.size(),
                     snapshot.size(), passed.get(), ratio(passed.get(), snapshot.size()),
                     categories, error, snapshot);

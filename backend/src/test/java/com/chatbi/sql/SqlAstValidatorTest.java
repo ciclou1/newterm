@@ -43,6 +43,29 @@ class SqlAstValidatorTest {
     @Test
     void rejectsMultipleStatements() {
         assertRejected("SELECT * FROM v_sales_fact; SELECT * FROM v_purchase_fact", "MULTI_STATEMENT");
+        assertRejected("SELECT * FROM v_sales_fact; -- trailing\nSELECT * FROM v_purchase_fact",
+                "MULTI_STATEMENT");
+    }
+
+    @Test
+    void rejectsUnionIntersectAndExcept() {
+        assertRejected("SELECT region FROM v_sales_fact UNION SELECT region FROM v_purchase_fact",
+                "SET_OPERATION");
+        assertRejected("SELECT region FROM v_sales_fact UNION ALL SELECT region FROM v_purchase_fact",
+                "SET_OPERATION");
+        assertRejected("SELECT region FROM v_sales_fact INTERSECT SELECT region FROM v_purchase_fact",
+                "SET_OPERATION");
+        assertRejected("SELECT region FROM v_sales_fact EXCEPT SELECT region FROM v_purchase_fact",
+                "SET_OPERATION");
+    }
+
+    @Test
+    void rejectsSetOperationsRegardlessOfCasingOrComments() {
+        assertRejected("select region from v_sales_fact union select region from v_purchase_fact",
+                "SET_OPERATION");
+        assertRejected("SELECT region FROM v_sales_fact /* note */ UnIoN /* note */ "
+                        + "SELECT region FROM v_purchase_fact",
+                "SET_OPERATION");
     }
 
     @Test

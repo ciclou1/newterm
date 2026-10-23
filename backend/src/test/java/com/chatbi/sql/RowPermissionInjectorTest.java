@@ -2,6 +2,8 @@ package com.chatbi.sql;
 
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.RowPermission;
+import com.chatbi.domain.entity.SemColumn;
+import com.chatbi.domain.entity.SemTable;
 import com.chatbi.semantic.SemanticSnapshot;
 import org.junit.jupiter.api.Test;
 
@@ -89,23 +91,70 @@ class RowPermissionInjectorTest {
     void combinesMultipleRulesWithAnd() {
         SemanticSnapshot snapshot = snapshot(
                 rule("zhangsan", "1"),
-                rule("zhangsan", "2025", "fiscal_year"));
+                rule("zhangsan", "华东", "region"));
 
         RowPermissionInjector.Injection result = injector.inject(
                 "SELECT * FROM v_sales_fact", user("zhangsan", false), snapshot);
 
         assertThat(result.allowed()).isTrue();
         assertThat(result.sql()).contains("department_id IN (1)");
-        assertThat(result.sql()).contains("fiscal_year IN (2025)");
+        assertThat(result.sql()).contains("region IN ('华东')");
         assertThat(result.scopes()).hasSize(1);
         assertThat(result.scopes().getFirst().predicate())
                 .contains("department_id IN (1)")
-                .contains("fiscal_year IN (2025)");
+                .contains("region IN ('华东')");
+    }
+
+    @Test
+    void rejectsColumnNamesThatAreNotPlainIdentifiers() {
+        SemanticSnapshot snapshot = snapshot(rule("zhangsan", "1", "department_id) OR (1=1"));
+
+        RowPermissionInjector.Injection result = injector.inject(
+                "SELECT * FROM v_sales_fact", user("zhangsan", false), snapshot);
+
+        assertThat(result.allowed()).isFalse();
+        assertThat(result.code()).isEqualTo("ROW_PERMISSION_INVALID_COLUMN");
+        assertThat(result.sql()).isNull();
+    }
+
+    @Test
+    void rejectsColumnsThatAreNotRegisteredInTheSemanticLayer() {
+        SemanticSnapshot snapshot = snapshot(rule("zhangsan", "1", "not_a_column"));
+
+        RowPermissionInjector.Injection result = injector.inject(
+                "SELECT * FROM v_sales_fact", user("zhangsan", false), snapshot);
+
+        assertThat(result.allowed()).isFalse();
+        assertThat(result.code()).isEqualTo("ROW_PERMISSION_INVALID_COLUMN");
+    }
+
+    @Test
+    void normalizesAnUpperCaseColumnToALowerCaseIdentifier() {
+        SemanticSnapshot snapshot = snapshot(rule("zhangsan", "1", "DEPARTMENT_ID"));
+
+        RowPermissionInjector.Injection result = injector.inject(
+                "SELECT * FROM v_sales_fact", user("zhangsan", false), snapshot);
+
+        assertThat(result.allowed()).isTrue();
+        assertThat(result.sql()).contains("v_sales_fact.department_id IN (1)");
     }
 
     private SemanticSnapshot snapshot(RowPermission... permissions) {
-        return new SemanticSnapshot(1, List.of(), List.of(), List.of(), List.of(),
+        SemTable table = new SemTable();
+        table.setId(1L);
+        table.setTableName("v_sales_fact");
+        table.setEnabled(true);
+        List<SemColumn> columns = List.of(column(1L, "department_id", 1), column(1L, "region", 2));
+        return new SemanticSnapshot(1, List.of(table), columns, List.of(), List.of(),
                 List.of(), List.of(), List.of(permissions));
+    }
+
+    private SemColumn column(Long tableId, String name, int ordinal) {
+        SemColumn column = new SemColumn();
+        column.setTableId(tableId);
+        column.setColumnName(name);
+        column.setOrdinal(ordinal);
+        return column;
     }
 
     private RowPermission rule(String username, String values) {
