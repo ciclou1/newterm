@@ -102,13 +102,27 @@ chatbi:
   ai:
     enabled: ${CHATBI_AI_ENABLED:false}
     base-url: ${CHATBI_AI_BASE_URL:https://api.openai.com}
-    api-key: ${OPENAI_API_KEY:}
+    # CHATBI_AI_API_KEY is the canonical name; OPENAI_API_KEY stays supported
+    # so existing deployments keep working.
+    api-key: ${CHATBI_AI_API_KEY:${OPENAI_API_KEY:}}
     model: ${CHATBI_AI_MODEL:gpt-4.1-mini}
-    temperature: 0.1
-    max-tokens: 1400
-    input-cost-per-million: ${CHATBI_AI_INPUT_COST_PER_MILLION:0.40}
-    output-cost-per-million: ${CHATBI_AI_OUTPUT_COST_PER_MILLION:1.60}
-    timeout-seconds: 45
+    temperature: ${CHATBI_AI_TEMPERATURE:0.1}
+    max-tokens: ${CHATBI_AI_MAX_TOKENS:1400}
+    # Leave prices empty unless the gateway/model card publishes them. Zero
+    # means "unknown": token counts are still recorded, cost stays 0.
+    input-cost-per-million: ${CHATBI_AI_INPUT_COST_PER_MILLION:0}
+    output-cost-per-million: ${CHATBI_AI_OUTPUT_COST_PER_MILLION:0}
+    price-currency: ${CHATBI_AI_PRICE_CURRENCY:USD}
+    timeout-seconds: ${CHATBI_AI_TIMEOUT_SECONDS:45}
+    connect-timeout-seconds: ${CHATBI_AI_CONNECT_TIMEOUT_SECONDS:10}
+    max-retries: ${CHATBI_AI_MAX_RETRIES:2}
+    retry-backoff-ms: ${CHATBI_AI_RETRY_BACKOFF_MS:800}
+    json-mode: ${CHATBI_AI_JSON_MODE:true}
+    max-prompt-chars: ${CHATBI_AI_MAX_PROMPT_CHARS:28000}
+    max-schema-chars: ${CHATBI_AI_MAX_SCHEMA_CHARS:16000}
+    max-history-chars: ${CHATBI_AI_MAX_HISTORY_CHARS:2000}
+    max-history-turns: ${CHATBI_AI_MAX_HISTORY_TURNS:3}
+    max-question-chars: ${CHATBI_AI_MAX_QUESTION_CHARS:2000}
     allow-demo-fallback: ${CHATBI_AI_ALLOW_DEMO_FALLBACK:false}
   query:
     url: ${CHATBI_QUERY_DB_URL:jdbc:postgresql://localhost:5432/chatbi?stringtype=unspecified}

@@ -24,15 +24,44 @@ public class ChatBiProperties {
         private String model = "gpt-4.1-mini";
         private double temperature = 0.1;
         private int maxTokens = 1400;
-        private BigDecimal inputCostPerMillion = new BigDecimal("0.40");
-        private BigDecimal outputCostPerMillion = new BigDecimal("1.60");
+        /**
+         * Prices are deliberately not hardcoded: model pricing differs per
+         * gateway/account and an invented number would make the cost metric
+         * misleading. Zero means "not configured" and reported cost stays 0.
+         */
+        private BigDecimal inputCostPerMillion = BigDecimal.ZERO;
+        private BigDecimal outputCostPerMillion = BigDecimal.ZERO;
+        private String priceCurrency = "USD";
         private int timeoutSeconds = 45;
+        private int connectTimeoutSeconds = 10;
+        private int maxRetries = 2;
+        private long retryBackoffMs = 800;
+        /**
+         * Ask the provider for a JSON object response when supported. If the
+         * gateway rejects response_format, the client falls back to plain text
+         * with the robust parser instead of failing the query.
+         */
+        private boolean jsonMode = true;
+        /** Total prompt character budget (system + user), estimated before sending. */
+        private int maxPromptChars = 28_000;
+        /** Cap for the schema/few-shot section inside the system prompt. */
+        private int maxSchemaChars = 16_000;
+        /** Cap for the conversation-history section inside the user prompt. */
+        private int maxHistoryChars = 2_000;
+        private int maxHistoryTurns = 3;
+        /** Cap for a single user question after sanitisation. */
+        private int maxQuestionChars = 2_000;
         /**
          * When AI is enabled but generation fails, falling back to the rule
          * engine must be an explicit opt-in. The default is fail-closed: the
          * user sees an ERROR instead of a plausible-looking wrong answer.
          */
         private boolean allowDemoFallback = false;
+
+        public boolean costConfigured() {
+            return inputCostPerMillion != null && outputCostPerMillion != null
+                    && (inputCostPerMillion.signum() > 0 || outputCostPerMillion.signum() > 0);
+        }
     }
 
     @Data
