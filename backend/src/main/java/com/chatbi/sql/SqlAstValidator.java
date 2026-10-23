@@ -138,10 +138,13 @@ public class SqlAstValidator {
             if (plain.getWhere() != null && plain.getWhere().toString().toLowerCase(Locale.ROOT).contains("select")) {
                 throw new PolicyException("NESTED_QUERY", "当前安全策略只允许单层 SELECT");
             }
-        } else if (select instanceof SetOperationList union) {
-            for (Select child : union.getSelects()) {
-                collectSelect(child, allowedTables, checks, tables);
-            }
+        } else if (select instanceof SetOperationList) {
+            // The product policy is a single-level, single-branch SELECT. UNION /
+            // INTERSECT / EXCEPT change result semantics and make row-level
+            // auditing and permission reasoning harder, so they are rejected
+            // rather than silently allowed.
+            throw new PolicyException("SET_OPERATION",
+                    "不允许 UNION / INTERSECT / EXCEPT，请改写为单层 SELECT");
         } else if (select instanceof ParenthesedSelect) {
             throw new PolicyException("NESTED_QUERY", "当前安全策略只允许单层 SELECT");
         } else {

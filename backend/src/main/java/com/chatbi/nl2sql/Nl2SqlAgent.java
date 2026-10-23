@@ -27,11 +27,21 @@ import java.util.Set;
 @Component
 public class Nl2SqlAgent {
 
+    /**
+     * Policy violations that must never be handed back to the model: they are
+     * either destructive, escape the read-only boundary, or deny data access.
+     * Everything else (CTE/subquery/UNION, unknown table or column, syntax
+     * errors) is structurally repairable and goes through the bounded repair
+     * loop with an explicit rewrite instruction.
+     */
     private static final Set<String> HARD_POLICY_CODES = Set.of(
             "WRITE_KEYWORD", "DANGEROUS_FUNCTION", "SYSTEM_SCHEMA", "MULTI_STATEMENT",
-            "NESTED_QUERY", "NOT_SELECT", "SELECT_INTO", "LOCKING", "SCHEMA_DENIED",
-            "TABLE_DENIED", "UNSUPPORTED_SELECT", "UNSUPPORTED_FROM", "NO_FROM",
-            "SQL_TOO_LONG", "ROW_LEVEL_DENIED");
+            "SELECT_INTO", "LOCKING", "SQL_TOO_LONG", "ROW_LEVEL_DENIED");
+
+    private static final Set<String> STRUCTURAL_REPAIR_CODES = Set.of(
+            "NESTED_QUERY", "SET_OPERATION", "NOT_SELECT", "UNSUPPORTED_SELECT",
+            "UNSUPPORTED_FROM", "SCHEMA_DENIED", "TABLE_DENIED", "NO_FROM",
+            "NO_TABLE", "PARSE_ERROR");
 
     private final SchemaLinker schemaLinker;
     private final AiSqlGenerator aiGenerator;
@@ -108,6 +118,8 @@ public class Nl2SqlAgent {
         String feedback = null;
         String previousAttemptSql = previousSql;
         boolean repairPossible = aiGenerator.available();
+        boolean degraded = false;
+        String degradedReason = null;
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -117,6 +129,8 @@ public class Nl2SqlAgent {
             generateMs += System.currentTimeMillis() - genStart;
             SqlGeneration generation = outcome.generation();
             mode = outcome.mode();
+            degraded = outcome.degraded();
+            degradedReason = outcome.degradedReason();
             promptTokens += generation.promptTokens();
             completionTokens += generation.completionTokens();
             if (generation.model() != null && !generation.model().isBlank()) {
@@ -130,7 +144,7 @@ public class Nl2SqlAgent {
                 trace.add(new AgentResult.Attempt(attempts, mode, "clarify", null, "CLARIFY",
                         generation.clarification().question(), false, 0));
                 return AgentResult.clarification(question, generation.clarification(), mode, schemaInfo,
-                        performance, usage, trace);
+                        performance, usage, trace, degraded, degradedReason);
             }
             if (!generation.hasSql()) {
                 stage = "generate";
@@ -160,9 +174,10 @@ public class Nl2SqlAgent {
                     return failure("BLOCKED", question, mode, generatedSql, null, explanation,
                             guardInfo, queryResult, usage(attempts, promptTokens, completionTokens, model),
                             performance(linkMs, generateMs, guardMs, executeMs, start, explainCost, planNodes),
-                            schemaInfo, new AgentResult.Failure(stage, code, error), trace);
+                            schemaInfo, new AgentResult.Failure(stage, code, error), trace,
+                            degraded, degradedReason);
                 }
-                feedback = "安全校验未通过 [" + code + "]：" + error + "。请修复后重新生成。";
+                feedback = repairFeedback(code, error);
                 if (!repairPossible || "DEMO".equals(mode) || attempts >= maxAttempts) {
                     break;
                 }
@@ -199,7 +214,8 @@ public class Nl2SqlAgent {
                 return failure("BLOCKED", question, mode, generatedSql, finalSql, explanation,
                         guardInfo, queryResult, usage(attempts, promptTokens, completionTokens, model),
                         performance(linkMs, generateMs, guardMs, executeMs, start, explainCost, planNodes),
-                        schemaInfo, new AgentResult.Failure(stage, code, error), trace);
+                        schemaInfo, new AgentResult.Failure(stage, code, error), trace,
+                        degraded, degradedReason);
             }
             trace.add(new AgentResult.Attempt(attempts, mode, "explain", finalSql, null,
                     "cost=" + Math.round(plan.totalCost()), true, System.currentTimeMillis() - explainStart));
@@ -229,33 +245,55 @@ public class Nl2SqlAgent {
                     start, explainCost, planNodes);
             return new AgentResult("OK", question, mode, generatedSql, finalSql, explanation,
                     generation.confidence(), null, guardInfo, queryResult, usage, performance,
-                    schemaInfo, new AgentResult.Failure(null, null, null), trace);
+                    schemaInfo, new AgentResult.Failure(null, null, null), trace,
+                    degraded, degradedReason);
         }
 
         String status = "guard".equals(stage) && isPolicyCode(code) ? "BLOCKED" : "ERROR";
         return failure(status, question, mode, generatedSql, finalSql, explanation, guardInfo, queryResult,
                 usage(attempts, promptTokens, completionTokens, model),
                 performance(linkMs, generateMs, guardMs, executeMs, start, explainCost, planNodes),
-                schemaInfo, new AgentResult.Failure(stage, code, error), trace);
+                schemaInfo, new AgentResult.Failure(stage, code, error), trace,
+                degraded, degradedReason);
     }
 
     private GenerationOutcome generate(String question, SchemaContext schema, AppUser user,
                                        List<ConversationTurn> history, String previousSql, String feedback,
                                        String previousQuestion, List<AgentResult.Attempt> trace, int index) {
         if (!aiGenerator.available()) {
-            return new GenerationOutcome(demoGenerator.generate(question, schema, previousQuestion), "DEMO", true);
+            // AI is disabled by configuration: the deterministic rule engine is
+            // the primary planner, not a degraded fallback.
+            return new GenerationOutcome(demoGenerator.generate(question, schema, previousQuestion),
+                    "DEMO", true, false, null);
         }
         SqlGeneration ai = aiGenerator.generate(question, schema, user, history, previousSql, feedback);
         if (ai.hasSql() || ai.clarification() != null) {
-            return new GenerationOutcome(ai, "AI", false);
+            return new GenerationOutcome(ai, "AI", false, false, null);
         }
         trace.add(new AgentResult.Attempt(index, "AI", "generate", null,
                 "AI_FALLBACK", ai.error(), false, 0));
+        if (!properties.getAi().isAllowDemoFallback()) {
+            // Fail closed: never silently substitute a rule-engine answer for a
+            // failed LLM call. The caller surfaces an ERROR with the reason.
+            return new GenerationOutcome(ai, "AI", false, false, null);
+        }
         SqlGeneration demo = demoGenerator.generate(question, schema, previousQuestion);
         if (demo.hasSql() || demo.clarification() != null) {
-            return new GenerationOutcome(demo, "DEMO", true);
+            String reason = "AI 生成失败，已按 CHATBI_AI_ALLOW_DEMO_FALLBACK=true 降级到规则引擎"
+                    + (ai.error() == null ? "" : "：" + ai.error());
+            return new GenerationOutcome(demo, "DEMO", true, true, reason);
         }
-        return new GenerationOutcome(ai, "AI", true);
+        return new GenerationOutcome(ai, "AI", false, false, null);
+    }
+
+    private String repairFeedback(String code, String message) {
+        if (STRUCTURAL_REPAIR_CODES.contains(code)) {
+            return "SQL 结构不符合平台策略 [" + code + "]：" + message
+                    + "。请改写为单层 SELECT：禁止 WITH/CTE、子查询、UNION/INTERSECT/EXCEPT；"
+                    + "需要聚合时直接使用 GROUP BY、HAVING 与聚合函数；只能引用语义 Schema 中的表和字段。"
+                    + "只输出 JSON。";
+        }
+        return "安全校验未通过 [" + code + "]：" + message + "。请修复后重新生成。";
     }
 
     private boolean isPolicyCode(String code) {
@@ -303,9 +341,10 @@ public class Nl2SqlAgent {
                                 String finalSql, String explanation, AgentResult.GuardInfo guard,
                                 AgentResult.QueryResult result, AgentResult.Usage usage,
                                 AgentResult.Performance performance, AgentResult.SchemaInfo schema,
-                                AgentResult.Failure failure, List<AgentResult.Attempt> trace) {
+                                AgentResult.Failure failure, List<AgentResult.Attempt> trace,
+                                boolean degraded, String degradedReason) {
         return AgentResult.failure(status, question, mode, generatedSql, finalSql, explanation, null,
-                guard, result, usage, performance, schema, failure, trace);
+                guard, result, usage, performance, schema, failure, trace, degraded, degradedReason);
     }
 
     private String shortMessage(Exception e) {
@@ -317,6 +356,7 @@ public class Nl2SqlAgent {
         return newline > 0 ? message.substring(0, newline) : message;
     }
 
-    private record GenerationOutcome(SqlGeneration generation, String mode, boolean fallback) {
+    private record GenerationOutcome(SqlGeneration generation, String mode, boolean fallback,
+                                     boolean degraded, String degradedReason) {
     }
 }

@@ -1,11 +1,13 @@
 package com.chatbi.service;
 
+import com.chatbi.common.ChatBiException;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.QueryAudit;
 import com.chatbi.mapper.QueryAuditMapper;
 import com.chatbi.nl2sql.AgentResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -47,8 +49,12 @@ public class AuditService {
             auditMapper.insert(audit);
             return audit.getId();
         } catch (Exception e) {
-            log.warn("Audit insert failed: {}", e.getMessage());
-            return null;
+            // Fail closed: an untraceable analytical query must not be
+            // presented to the user as a successful answer.
+            log.error("Audit insert failed, refusing to return the query result", e);
+            throw new ChatBiException("AUDIT_UNAVAILABLE",
+                    "审计写入失败，查询结果未返回；请稍后重试或联系管理员",
+                    HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 

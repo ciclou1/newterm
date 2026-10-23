@@ -109,6 +109,7 @@ chatbi:
     input-cost-per-million: ${CHATBI_AI_INPUT_COST_PER_MILLION:0.40}
     output-cost-per-million: ${CHATBI_AI_OUTPUT_COST_PER_MILLION:1.60}
     timeout-seconds: 45
+    allow-demo-fallback: ${CHATBI_AI_ALLOW_DEMO_FALLBACK:false}
   query:
     url: ${CHATBI_QUERY_DB_URL:jdbc:postgresql://localhost:5432/chatbi?stringtype=unspecified}
     username: ${CHATBI_READONLY_DB_USER:chatbi_ro}

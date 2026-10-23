@@ -27,6 +27,12 @@ public class ChatBiProperties {
         private BigDecimal inputCostPerMillion = new BigDecimal("0.40");
         private BigDecimal outputCostPerMillion = new BigDecimal("1.60");
         private int timeoutSeconds = 45;
+        /**
+         * When AI is enabled but generation fails, falling back to the rule
+         * engine must be an explicit opt-in. The default is fail-closed: the
+         * user sees an ERROR instead of a plausible-looking wrong answer.
+         */
+        private boolean allowDemoFallback = false;
     }
 
     @Data

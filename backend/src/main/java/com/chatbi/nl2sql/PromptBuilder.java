@@ -15,6 +15,9 @@ import java.util.List;
 @Component
 public class PromptBuilder {
 
+    /** Recorded with every evaluation job so prompt changes are traceable. */
+    public static final String VERSION = "2026-10-23.1";
+
     public String systemPrompt(SchemaContext schema, AppUser user) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
