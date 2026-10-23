@@ -64,8 +64,13 @@ class JwtServiceTest {
     void rejectsTamperedSignature() {
         JwtService jwt = service();
         String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), 60);
-        char last = token.charAt(token.length() - 1);
-        String tampered = token.substring(0, token.length() - 1) + (last == 'a' ? 'b' : 'a');
+        int signatureStart = token.lastIndexOf('.') + 1;
+        String signature = token.substring(signatureStart);
+        // Flip the first signature character: it determines the top bits of the
+        // first decoded byte, unlike the last character where padding bits make
+        // some substitutions decode to the same signature.
+        char replacement = signature.charAt(0) == 'A' ? 'B' : 'A';
+        String tampered = token.substring(0, signatureStart) + replacement + signature.substring(1);
 
         assertThatThrownBy(() -> jwt.parse(tampered))
                 .isInstanceOf(JwtValidationException.class)
