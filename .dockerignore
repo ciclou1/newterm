@@ -1,9 +1,14 @@
 .git
+.github
+.claude
 .idea
 .vscode
 .env
+.env.*
 *.log
 **/target
 **/node_modules
 frontend/dist
 frontend/.vite
+**/.DS_Store
+**/Thumbs.db

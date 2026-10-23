@@ -141,7 +141,7 @@ export CHATBI_JWT_SECRET="$(openssl rand -base64 48)"
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 132 个测试（P0 50 + 认证 51 + LLM 31）
+./mvnw -pl backend test                 # 175 个测试（P0 + 认证/RBAC/配额 + LLM）
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```

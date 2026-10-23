@@ -40,7 +40,8 @@ const roleLabel = computed(() => {
 
 function allowed(next: ViewKey): boolean {
   const item = allViews.find((entry) => entry.key === next)
-  return Boolean(item) && (!item.adminOnly || isAdmin.value)
+  if (!item) return false
+  return !item.adminOnly || isAdmin.value
 }
 
 function navigate(next: ViewKey) {
