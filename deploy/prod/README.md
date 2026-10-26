@@ -56,12 +56,23 @@ known only to the operator:
 ```bash
 TOKEN=$(curl -sk https://chatbi.example.com/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"lisi","password":"<bootstrap password>"}' | jq -r .token)
+  -d '{"username":"lisi","password":"<bootstrap password>"}' | jq -r .accessToken)
 
 curl -sk https://chatbi.example.com/api/auth/password \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"currentPassword":"<bootstrap password>","newPassword":"<new operator password>"}'
+  -d '{"oldPassword":"<bootstrap password>","newPassword":"<new operator password>"}'
 ```
+
+The login response field is `accessToken`; the password-change endpoint takes
+`oldPassword` and `newPassword`.
+
+A password change revokes every token for that user issued before the change:
+each token carries a fingerprint of the `password_hash` current at issue time,
+and the backend compares it with the database value on every request. Expect a
+`401 TOKEN_REVOKED` until the user logs in again. Tokens without the claim
+(including any issued before this release) are rejected the same way, so a
+deployment invalidates all previously issued JWTs and forces one re-login.
+JWT secret rotation still invalidates every token for every user.
 
 Then remove `CHATBI_BOOTSTRAP_ADMIN_PASSWORD` from `.env` and recreate the
 backend. The bootstrap value is only consumed when a demo/unset password is
@@ -206,7 +217,8 @@ docker compose logs --since 15m backend | jq 'select(.requestId=="<id>")'
 
 **JWT** — generate a new value, update `.env`, recreate the backend. All
 existing tokens become invalid; users log in again. Do this immediately if a
-secret may have leaked.
+secret may have leaked. A single user's password change invalidates only that
+user's earlier tokens (see the bootstrap section above).
 
 **Metrics token** — update `CHATBI_METRICS_TOKEN` and recreate both `backend`
 and `prometheus` (Prometheus rewrites `/tmp/metrics_token` at startup).
@@ -258,3 +270,14 @@ retries.
   needs a Flyway migration for `semantic_embedding.embedding` and a reindex.
 - Prometheus/Grafana data volumes are local; ship them off-host if the host
   itself is the failure domain.
+- The 80→443 redirect targets the standard HTTPS port. Publishing the stack on
+  non-standard host ports (for example an isolated test mapping `18080:8080`
+  and `18443:8443`) yields `Location: https://host/` without the external port;
+  connect to `https://host:<port>` directly. A standard 80/443 deployment is
+  unaffected. This is a port-mapping side effect of isolated environments, not
+  a production issue.
+- Evaluation jobs and per-question results live in backend memory
+  (`ConcurrentHashMap`); a restart clears `GET /api/eval/jobs`. Persisting
+  evaluation history is a follow-up item.
+- `POST /api/auth/password` revokes that user's earlier JWTs. Other users are
+  unaffected; rotating `CHATBI_JWT_SECRET` revokes every token.

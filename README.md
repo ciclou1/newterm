@@ -141,8 +141,9 @@ export CHATBI_JWT_SECRET="$(openssl rand -base64 48)"
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 180 个测试（P0 + 认证/RBAC/配额 + LLM + 部署加固）
+./mvnw -pl backend test                 # 204 个测试（基线 190 + 多轮分组继承/JWT 撤销新增 14）
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
+cd frontend && npm run lint && npm test # 29 个前端测试
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
 
@@ -159,17 +160,35 @@ cd frontend && npm run build            # vue-tsc + Vite 生产构建
 - 当前各仓库库存金额
 - 今年销售额和订单数
 - 今年华东区采购金额
-- 今年应收账款账龄分布
-- 那去年呢？ / 那订单数呢？（多轮追问）
+- 今年应收账款账龄分布（口径不唯一，可能返回 `CLARIFY` 并要求选择账龄口径）
+- 那去年呢？ / 那订单数呢？（多轮追问：继承上一轮的指标、时间、过滤与分组维度）
 - 帮我看看数据（触发口径澄清）
 
 演示数据覆盖 6 个主题：销售、采购、库存、维修、应收、设备。
+
+问数 API 示例（先按第 3.1 节登录取得 `TOKEN`）：
+
+```bash
+curl -s -X POST http://localhost:8080/api/chat/query \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"今年各区域销售额"}'
+```
+
+请求体只有 `question`（必填，≤500 字）和可选的 `conversationId`；多轮追问时传上一轮响应里的 `conversationId`：
+
+```json
+{"question":"那去年呢","conversationId":"6f1c5a4e-8b2d-4a1f-9c3e-2d5b7a9c1e44"}
+```
+
+响应的 `result.status` 为 `OK` / `BLOCKED` / `ERROR` / `CLARIFY`，并带 `result.finalSql`、`explanation`、`answer`、`table`、`chart`、`followUps`、`clarification`；降级响应另有 `result.degraded`（布尔）与 `result.degradedReason`（前端以 `DEGRADED` 徽标展示）。
 
 ### 4.2 返回内容
 
 每次问数返回：
 
-- `status`：`OK` / `BLOCKED` / `ERROR` / `CLARIFY`
+- `status`：`OK` / `BLOCKED` / `ERROR` / `CLARIFY`；降级结果在 UI 中另显示 `DEGRADED` 徽标
+- `degraded` / `degradedReason`：是否走了降级路径以及原因（正常路径为 `false` / `null`）
 - `finalSql`、`explanation`（口径）、`answer`（自然语言结论）
 - `table`（列/行/单位）与 `chart`（类型、维度、系列）
 - `followUps`（推荐追问）、`clarification`（澄清选项）
@@ -231,7 +250,7 @@ Schema Linking 流程：
 - JSON mode 仅在网关错误文本明确提及 `response_format`/`json_object` 时回退；其余 400/404/422 按真实错误处理。回退后按 TTL 重新探测，不会永久关闭。
 - 网关错误进入健康检查、审计与用户可见消息前，统一脱敏 `sk-*` 与 `Bearer *`。
 - 修复提示包含数据库原始错误、当前 Schema 与上一次 SQL；达到重试上限后返回 `ERROR`，并保留失败阶段与信息。
-- 多轮对话会继承上一轮的时间口径、过滤条件与主题；“那去年呢”只改时间，“那订单数呢”保留其余条件。
+- 多轮对话会继承上一轮的时间口径、过滤条件、主题与分组维度；“那去年呢”只改时间并保留上一轮的 GROUP BY（例如继续按区域），用户明确说“总额/汇总/不分区域”时才退化为单行合计。
 
 ### 5.3 SQL 安全链路
 
@@ -302,6 +321,8 @@ curl -X POST http://localhost:8080/api/eval/run \
 ```
 
 也可以在前端「评测」页运行全量评测。
+
+> 评测任务与进度保存在后端进程内存（`ConcurrentHashMap`），后端重启后 `GET /api/eval/jobs` 返回空列表，历史结果不落库。需要跨重启保留评测历史时，应将任务与逐题结果持久化（后续项）。
 
 ### 6.1 两种基线
 
@@ -535,6 +556,7 @@ docker compose --project-name chatbi-prod -f compose.yml up -d --build
 - **JWT secret**：`openssl rand -base64 48`，写入 `.env`；docker/prod 对空值、过短或 `local-dev-only` 前缀直接拒绝启动。
 - **模型 Key**：仅通过 `CHATBI_AI_API_KEY` 环境变量注入，不写入镜像、日志或审计表。
 - **网络**：仅 edge 发布 80/443（80 跳转 443）；Postgres、Redis、backend、frontend、Prometheus、Grafana 均无宿主端口；Postgres/Redis 位于无外网路由的 `internal` 网络，Redis 启用 `requirepass`。
+- **非标准端口下的跳转限制**：80→443 的 `Location` 按标准端口生成。若把 80/443 映射到其他宿主机端口（隔离验收常用 `18080/18443`），`http://host:18080/` 会被跳到 `https://host/`（不带 `:18443`），请直接访问 `https://host:<port>`。标准 80/443 部署不受影响。
 - **TLS/代理**：edge 终止 TLS，覆盖（而非透传）`X-Forwarded-For`，带 HSTS/CSP 等安全头，代理层对登录/问数/通用 API 限流，请求超时与 60 秒 LLM 硬预算对齐。
 - **数据**：`scripts/backup-postgres.sh` / `backup-redis.sh` 带保留策略；`restore-postgres.sh` 默认恢复到临时库并校验 Flyway、种子用户、6 个视图与 `chatbi_ro` 仅 6 个 SELECT 授权。
 - **可观测性**：Prometheus 用 `CHATBI_METRICS_TOKEN` 抓取 `/actuator/prometheus`（该令牌仅在此路径授予 `ROLE_METRICS`），告警覆盖 5xx、查询 P95、LLM 失败/超时、审计 fail-closed、DB/Redis down、配额拒绝；Grafana 自动加载 dashboard；prod profile 输出带 `requestId` 的 JSON 日志。
@@ -580,10 +602,11 @@ docker compose --project-name chatbi-prod -f compose.yml up -d --build
 - SQL 安全策略只允许单层、单分支 SELECT，禁止 CTE / 子查询 / UNION / INTERSECT / EXCEPT；复杂分析需改写为 `GROUP BY` / `HAVING` 聚合，或按需扩展策略（如引入受控 CTE）。
 - 语义层由后端维护 API 管理，前端目前只有只读查看与刷新索引，没有可视化编辑界面。
 - 向量检索使用离线哈希嵌入，不具备真实语义泛化能力；替换为托管 Embedding 后效果更好，但需迁移 `vector(512)` 列并重建索引。
-- 认证为用户名密码 + 无状态 JWT，尚未接入 OAuth2 / OIDC / 企业 SSO，也没有令牌吊销列表；缩短 TTL 或轮换 `CHATBI_JWT_SECRET` 可使全部令牌立即失效。改密入口为 `POST /api/auth/password`，前端暂未提供改密页面。
+- 认证为用户名密码 + 无状态 JWT，尚未接入 OAuth2 / OIDC / 企业 SSO。改密会立即撤销该用户此前签发的令牌（令牌内嵌 `password_hash` 指纹并在每次请求校验，旧令牌返回 `401 TOKEN_REVOKED`）；轮换 `CHATBI_JWT_SECRET` 仍可使全部令牌立即失效。没有独立的令牌黑名单或管理员强制下线能力。前端暂未提供改密页面。
 - 限流（令牌桶）与登录失败锁定为单实例内存实现；配额预留已使用 Redis，但多副本仍需把令牌桶与登录锁迁移到共享存储。
 - 演示口令 `ChatBI@2026` 仅用于未启用 docker/prod profile 的本机演示；生产首启必须提供 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`，否则启动失败。
 - 评测仅限管理员运行，且是规则基线口径；评测集与演示数据为合成数据，指标口径用于展示方法而非业务结论。
+- 评测任务与历史结果保存在内存中，后端重启即清空；需要留存时需落库（后续项）。
 
 ---
 
