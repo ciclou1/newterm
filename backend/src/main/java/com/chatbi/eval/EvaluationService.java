@@ -272,6 +272,12 @@ public class EvaluationService {
                 }
             }
             if (matched < 0) {
+                int sameName = sameNameColumn(actualColumns, used, expectedColumns.get(e));
+                if (sameName >= 0) {
+                    return new Comparison(false, "列 " + expectedColumns.get(e) + " 值不匹配（期望 "
+                            + preview(expectedCells.get(e)) + "，实际 "
+                            + preview(actualCells.get(sameName)) + "）");
+                }
                 return new Comparison(false, "列 " + expectedColumns.get(e) + " 无法匹配生成结果列 "
                         + actualColumns);
             }
@@ -311,6 +317,39 @@ public class EvaluationService {
             values.add(columnValues);
         }
         return values;
+    }
+
+    /**
+     * Finds an unused actual column whose alias matches the expected column.
+     * Used only to explain a value mismatch better; column matching itself
+     * stays value-based.
+     */
+    private int sameNameColumn(List<String> actualColumns, Set<Integer> used, String expectedName) {
+        for (int a = 0; a < actualColumns.size(); a++) {
+            String actualName = actualColumns.get(a);
+            if (!used.contains(a) && expectedName != null && actualName != null
+                    && expectedName.trim().equalsIgnoreCase(actualName.trim())) {
+                return a;
+            }
+        }
+        return -1;
+    }
+
+    private String preview(List<String> values) {
+        if (values.isEmpty()) {
+            return "空";
+        }
+        int shown = Math.min(3, values.size());
+        List<String> parts = values.stream().limit(shown).map(this::previewValue).toList();
+        String joined = String.join("、", parts);
+        return values.size() > shown ? joined + "…（共 " + values.size() + " 行）" : joined;
+    }
+
+    private String previewValue(String value) {
+        if ("\u0000NULL".equals(value) || value == null) {
+            return "NULL";
+        }
+        return value.length() > 40 ? value.substring(0, 40) + "…" : value;
     }
 
     private boolean sameColumn(List<String> left, List<String> right) {

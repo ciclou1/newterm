@@ -59,6 +59,37 @@ class EvaluationServiceTest {
     }
 
     @Test
+    void reportsValueMismatchWhenTheSameNamedColumnHoldsDifferentValues() {
+        when(agent.ask(anyString(), any(), any()))
+                .thenReturn(answer(rows("invoice_amount", new BigDecimal("120"))));
+        when(queryExecutor.execute(GOLDEN_SQL))
+                .thenReturn(golden(rows("invoice_amount", new BigDecimal("100"))));
+
+        EvaluationService.CaseResult result = service.evaluate(question(), admin());
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.code()).isEqualTo("RESULT_MISMATCH");
+        assertThat(result.message())
+                .isEqualTo("列 invoice_amount 值不匹配（期望 100，实际 120）");
+    }
+
+    @Test
+    void reportsColumnMismatchWhenNoGeneratedColumnHasTheSameName() {
+        when(agent.ask(anyString(), any(), any()))
+                .thenReturn(answer(rows("amount", new BigDecimal("130"))));
+        when(queryExecutor.execute(GOLDEN_SQL))
+                .thenReturn(golden(rows("invoice_amount", new BigDecimal("100"))));
+
+        EvaluationService.CaseResult result = service.evaluate(question(), admin());
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.code()).isEqualTo("RESULT_MISMATCH");
+        assertThat(result.message())
+                .isEqualTo("列 invoice_amount 无法匹配生成结果列 [amount]")
+                .doesNotContain("值不匹配");
+    }
+
+    @Test
     void reusesTheAgentResultInsteadOfExecutingTheGeneratedSqlAgain() {
         when(agent.ask(anyString(), any(), any())).thenReturn(answer(rows(BigDecimal.TEN)));
         when(queryExecutor.execute(GOLDEN_SQL)).thenReturn(golden(rows(BigDecimal.TEN)));
@@ -111,9 +142,13 @@ class EvaluationServiceTest {
     }
 
     private QueryExecutor.QueryExecution rows(BigDecimal value) {
+        return rows("total", value);
+    }
+
+    private QueryExecutor.QueryExecution rows(String column, BigDecimal value) {
         return new QueryExecutor.QueryExecution(true,
-                List.of(new QueryExecutor.ResultColumn("total", "numeric")),
-                List.of(Map.of("total", value)), true, false, 1, null);
+                List.of(new QueryExecutor.ResultColumn(column, "numeric")),
+                List.of(Map.of(column, value)), true, false, 1, null);
     }
 
     private QueryExecutor.QueryExecution golden(QueryExecutor.QueryExecution source) {
