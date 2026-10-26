@@ -15,6 +15,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -29,6 +30,9 @@ public class JwtService {
     private static final String MAC = "HmacSHA256";
     private static final int MIN_SECRET_BYTES = 32;
     private static final int MAX_TOKEN_CHARS = 8192;
+    /** Fingerprint of the current password hash, checked on every request. */
+    static final String CLAIM_PASSWORD_FINGERPRINT = "pwd";
+    private static final int FINGERPRINT_BYTES = 8;
 
     private final ObjectMapper objectMapper;
     private final byte[] secret;
@@ -54,10 +58,12 @@ public class JwtService {
     }
 
     public String issue(AppUser user) {
-        return issue(user.getUsername(), user.getId(), user.getDisplayName(), UserRoles.of(user), ttlSeconds);
+        return issue(user.getUsername(), user.getId(), user.getDisplayName(), UserRoles.of(user),
+                user.getPasswordHash(), ttlSeconds);
     }
 
-    public String issue(String username, Long userId, String displayName, List<String> roles, long ttl) {
+    public String issue(String username, Long userId, String displayName, List<String> roles,
+                        String passwordHash, long ttl) {
         Instant now = Instant.now();
         Instant expiresAt = now.plusSeconds(ttl);
         try {
@@ -76,6 +82,10 @@ public class JwtService {
             }
             ArrayNode roleArray = payload.putArray("roles");
             roles.forEach(roleArray::add);
+            // Binds the token to the password that was current when it was
+            // issued. Changing the password changes the hash, so every token
+            // issued before the change stops validating without server state.
+            payload.put(CLAIM_PASSWORD_FINGERPRINT, passwordFingerprint(passwordHash));
             payload.put("iat", now.getEpochSecond());
             payload.put("exp", expiresAt.getEpochSecond());
 
@@ -150,7 +160,8 @@ public class JwtService {
             }
             Long userId = payload.has("uid") ? payload.path("uid").asLong() : null;
             String displayName = payload.path("name").asText(null);
-            return new ChatBiPrincipal(username, userId, displayName, roles);
+            String passwordFingerprint = payload.path(CLAIM_PASSWORD_FINGERPRINT).asText(null);
+            return new ChatBiPrincipal(username, userId, displayName, roles, passwordFingerprint);
         } catch (JwtValidationException e) {
             throw e;
         } catch (Exception e) {
@@ -160,6 +171,31 @@ public class JwtService {
 
     public long getTtlSeconds() {
         return ttlSeconds;
+    }
+
+    /**
+     * Stable, non-reversible fingerprint of a BCrypt hash. Only the first
+     * {@value #FINGERPRINT_BYTES} bytes are used; the token reveals nothing
+     * about the password or the stored hash beyond equality.
+     */
+    public static String passwordFingerprint(String passwordHash) {
+        String material = passwordHash == null ? "" : passwordHash;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, FINGERPRINT_BYTES);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to compute password fingerprint", e);
+        }
+    }
+
+    /** Constant-time comparison of a token claim with the current DB hash. */
+    public static boolean passwordFingerprintMatches(String claim, String currentPasswordHash) {
+        if (claim == null || claim.isBlank()) {
+            return false;
+        }
+        return MessageDigest.isEqual(claim.getBytes(StandardCharsets.UTF_8),
+                passwordFingerprint(currentPasswordHash).getBytes(StandardCharsets.UTF_8));
     }
 
     private byte[] sign(String signingInput) {

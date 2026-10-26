@@ -60,9 +60,10 @@ class RateLimitIntegrationTest {
         user.setRoles("VIEWER");
         user.setEnabled(true);
         user.setIsAdmin(false);
+        user.setPasswordHash("$2a$12$rate-limit-password-hash");
         when(userMapper.selectOne(any())).thenReturn(user);
         return "Bearer " + jwtService.issue(user.getUsername(), user.getId(),
-                user.getDisplayName(), UserRoles.of(user), 60);
+                user.getDisplayName(), UserRoles.of(user), user.getPasswordHash(), 60);
     }
 
     @Test

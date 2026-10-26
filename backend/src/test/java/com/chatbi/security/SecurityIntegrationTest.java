@@ -4,6 +4,9 @@ import com.chatbi.mapper.AppUserMapper;
 import com.chatbi.metrics.ChatBiMetrics;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.service.UserDirectory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,11 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -69,6 +77,7 @@ class SecurityIntegrationTest {
         user.setRoles(roles);
         user.setEnabled(enabled);
         user.setIsAdmin(admin);
+        user.setPasswordHash("$2a$12$hash-for-" + username);
         return user;
     }
 
@@ -78,11 +87,42 @@ class SecurityIntegrationTest {
 
     private String token(AppUser user, long ttlSeconds) {
         return jwtService.issue(user.getUsername(), user.getId(), user.getDisplayName(),
-                UserRoles.of(user), ttlSeconds);
+                UserRoles.of(user), user.getPasswordHash(), ttlSeconds);
     }
 
     private String bearer(AppUser user) {
         return "Bearer " + token(user, 60);
+    }
+
+    /**
+     * Reproduces a token signed by a previous release that did not bind the
+     * password hash; it must not be accepted after this upgrade.
+     */
+    private String legacyTokenWithoutFingerprint(AppUser user) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode header = mapper.createObjectNode();
+        header.put("alg", "HS256");
+        header.put("typ", "JWT");
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("iss", "chatbi-test");
+        payload.put("sub", user.getUsername());
+        payload.put("uid", user.getId());
+        payload.put("name", user.getDisplayName());
+        ArrayNode roles = payload.putArray("roles");
+        roles.add("VIEWER");
+        long now = Instant.now().getEpochSecond();
+        payload.put("iat", now);
+        payload.put("exp", now + 60);
+
+        Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        String encodedHeader = encoder.encodeToString(mapper.writeValueAsBytes(header));
+        String encodedPayload = encoder.encodeToString(mapper.writeValueAsBytes(payload));
+        String signingInput = encodedHeader + "." + encodedPayload;
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec("integration-test-secret-0123456789abcdef"
+                .getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        String signature = encoder.encodeToString(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
+        return signingInput + "." + signature;
     }
 
     @Test
@@ -164,7 +204,7 @@ class SecurityIntegrationTest {
         AppUser viewer = user("zhangsan", "VIEWER", true, false);
         useUser(viewer);
         String escalated = jwtService.issue(viewer.getUsername(), viewer.getId(),
-                viewer.getDisplayName(), List.of("ADMIN"), 60);
+                viewer.getDisplayName(), List.of("ADMIN"), viewer.getPasswordHash(), 60);
 
         mockMvc.perform(get("/api/users/probe").header("Authorization", "Bearer " + escalated))
                 .andExpect(status().isForbidden());
@@ -221,6 +261,43 @@ class SecurityIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("USER_DISABLED"));
+    }
+
+    @Test
+    void tokenIssuedBeforeAPasswordChangeIsRejected() throws Exception {
+        AppUser before = user("zhangsan", "VIEWER", true, false);
+        before.setPasswordHash("$2a$12$old-password-hash");
+        String issued = token(before, 60);
+
+        AppUser after = user("zhangsan", "VIEWER", true, false);
+        after.setPasswordHash("$2a$12$new-password-hash");
+        useUser(after);
+
+        mockMvc.perform(get("/api/conversations/probe").header("Authorization", "Bearer " + issued))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_REVOKED"));
+    }
+
+    @Test
+    void tokenIssuedAfterAPasswordChangeIsAccepted() throws Exception {
+        AppUser after = user("zhangsan", "VIEWER", true, false);
+        after.setPasswordHash("$2a$12$new-password-hash");
+        useUser(after);
+
+        mockMvc.perform(get("/api/conversations/probe")
+                        .header("Authorization", "Bearer " + token(after, 60)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void tokenWithoutPasswordFingerprintIsRejected() throws Exception {
+        AppUser viewer = user("zhangsan", "VIEWER", true, false);
+        useUser(viewer);
+
+        mockMvc.perform(get("/api/conversations/probe")
+                        .header("Authorization", "Bearer " + legacyTokenWithoutFingerprint(viewer)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_REVOKED"));
     }
 
     @Test

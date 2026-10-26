@@ -62,6 +62,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             reject(request, response, "INVALID_TOKEN", "令牌中的用户不存在");
             return;
         }
+        // Password change revokes every token issued before it: the signed
+        // fingerprint no longer matches the hash currently stored. Tokens
+        // without the claim (issued by older versions) are rejected too.
+        if (principal.passwordFingerprint() == null || principal.passwordFingerprint().isBlank()) {
+            reject(request, response, "TOKEN_REVOKED", "令牌缺少口令指纹，请重新登录");
+            return;
+        }
+        if (!JwtService.passwordFingerprintMatches(principal.passwordFingerprint(), user.getPasswordHash())) {
+            reject(request, response, "TOKEN_REVOKED", "登录凭证已失效，请重新登录");
+            return;
+        }
         if (Boolean.FALSE.equals(user.getEnabled())) {
             metrics.authenticationFailure("user_disabled");
             errorWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,

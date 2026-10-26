@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JwtServiceTest {
 
     private static final String SECRET = "unit-test-secret-0123456789abcdef0123456789";
+    private static final String HASH = "$2a$12$unit-test-password-hash";
 
     private JwtService service(String secret, String issuer) {
         ChatBiProperties properties = new ChatBiProperties();
@@ -30,7 +31,7 @@ class JwtServiceTest {
     @Test
     void roundTripsPrincipal() {
         JwtService jwt = service();
-        String token = jwt.issue("alice", 7L, "Alice", List.of("ADMIN", "VIEWER"), 60);
+        String token = jwt.issue("alice", 7L, "Alice", List.of("ADMIN", "VIEWER"), HASH, 60);
 
         ChatBiPrincipal principal = jwt.parse(token);
 
@@ -42,9 +43,34 @@ class JwtServiceTest {
     }
 
     @Test
+    void bindsTheTokenToTheCurrentPasswordHash() {
+        JwtService jwt = service();
+        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), HASH, 60);
+
+        ChatBiPrincipal principal = jwt.parse(token);
+
+        assertThat(principal.passwordFingerprint()).isEqualTo(JwtService.passwordFingerprint(HASH));
+        assertThat(JwtService.passwordFingerprintMatches(principal.passwordFingerprint(), HASH)).isTrue();
+        assertThat(JwtService.passwordFingerprintMatches(principal.passwordFingerprint(),
+                "$2a$12$rotated-password-hash")).isFalse();
+        assertThat(JwtService.passwordFingerprintMatches(null, HASH)).isFalse();
+    }
+
+    @Test
+    void fingerprintIsShortStableAndDoesNotLeakTheHash() {
+        String fingerprint = JwtService.passwordFingerprint(HASH);
+
+        assertThat(fingerprint).hasSize(16)
+                .isEqualTo(JwtService.passwordFingerprint(HASH))
+                .doesNotContain(HASH);
+        assertThat(JwtService.passwordFingerprint(null))
+                .isEqualTo(JwtService.passwordFingerprint(""));
+    }
+
+    @Test
     void defaultsEmptyRolesToViewer() {
         JwtService jwt = service();
-        String token = jwt.issue("bob", 8L, "Bob", List.of(), 60);
+        String token = jwt.issue("bob", 8L, "Bob", List.of(), HASH, 60);
 
         assertThat(jwt.parse(token).roles()).containsExactly("VIEWER");
     }
@@ -52,7 +78,7 @@ class JwtServiceTest {
     @Test
     void rejectsExpiredToken() {
         JwtService jwt = service();
-        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), -5);
+        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), HASH, -5);
 
         assertThatThrownBy(() -> jwt.parse(token))
                 .isInstanceOf(JwtValidationException.class)
@@ -63,7 +89,7 @@ class JwtServiceTest {
     @Test
     void rejectsTamperedSignature() {
         JwtService jwt = service();
-        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), 60);
+        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), HASH, 60);
         int signatureStart = token.lastIndexOf('.') + 1;
         String signature = token.substring(signatureStart);
         // Flip the first signature character: it determines the top bits of the
@@ -81,7 +107,7 @@ class JwtServiceTest {
     @Test
     void rejectsTamperedPayload() {
         JwtService jwt = service();
-        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), 60);
+        String token = jwt.issue("alice", 7L, "Alice", List.of("VIEWER"), HASH, 60);
         String[] parts = token.split("\\.");
         String forgedPayload = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString("{\"iss\":\"chatbi-test\",\"sub\":\"admin\",\"exp\":9999999999}"
@@ -94,7 +120,7 @@ class JwtServiceTest {
 
     @Test
     void rejectsWrongIssuer() {
-        String token = service(SECRET, "issuer-a").issue("alice", 7L, "Alice", List.of("VIEWER"), 60);
+        String token = service(SECRET, "issuer-a").issue("alice", 7L, "Alice", List.of("VIEWER"), HASH, 60);
 
         assertThatThrownBy(() -> service(SECRET, "issuer-b").parse(token))
                 .isInstanceOf(JwtValidationException.class)

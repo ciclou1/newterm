@@ -9,8 +9,16 @@ import java.util.List;
  * use these roles because they are the roles that were actually signed into
  * the presented token.
  */
-public record ChatBiPrincipal(String username, Long userId, String displayName, List<String> roles)
-        implements Principal {
+public record ChatBiPrincipal(String username, Long userId, String displayName, List<String> roles,
+                              String passwordFingerprint) implements Principal {
+
+    /**
+     * Principals that do not come from a password login (demo header, service
+     * token, error paths) carry no fingerprint.
+     */
+    public ChatBiPrincipal(String username, Long userId, String displayName, List<String> roles) {
+        this(username, userId, displayName, roles, null);
+    }
 
     public ChatBiPrincipal {
         roles = List.copyOf(roles);
