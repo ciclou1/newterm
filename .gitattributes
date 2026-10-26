@@ -1,0 +1,12 @@
+# Keep shell and SQL assets LF even on Windows checkouts and git archive.
+* text=auto
+*.sh text eol=lf
+*.sql text eol=lf
+*.conf text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+mvnw text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
