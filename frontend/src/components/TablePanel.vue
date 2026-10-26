@@ -26,7 +26,7 @@ function downloadCsv() {
   const header = props.table.columns.map((column) => csvCell(column.label)).join(',')
   const lines = props.table.rows.map((row) =>
     props.table.columns.map((column) => csvCell(row[column.key])).join(','))
-  const content = `﻿${[header, ...lines].join('\n')}`
+  const content = `\uFEFF${[header, ...lines].join('\n')}`
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')

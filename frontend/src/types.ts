@@ -1,4 +1,4 @@
-export type Status = 'OK' | 'CLARIFY' | 'BLOCKED' | 'ERROR'
+export type Status = 'OK' | 'CLARIFY' | 'BLOCKED' | 'ERROR' | 'DEGRADED'
 
 export interface Series {
   name: string
@@ -89,6 +89,9 @@ export interface AgentResult {
     hits: string[]
   }
   failure: { stage: string; code: string; message: string } | null
+  /** True when the answer came from a fallback path rather than the primary planner. */
+  degraded: boolean
+  degradedReason: string | null
   trace: {
     index: number
     mode: string
@@ -160,8 +163,9 @@ export interface SemColumn {
 export interface SemSynonym {
   id: number
   targetType: string
-  targetName: string
+  targetKey: string
   synonym: string
+  weight?: number | null
 }
 
 export interface SemEnum {
@@ -170,6 +174,7 @@ export interface SemEnum {
   columnName: string
   enumValue: string
   enumLabel: string
+  description?: string | null
 }
 
 export interface SemTable {
@@ -202,6 +207,15 @@ export interface SemMetric {
   synonymsText: string | null
   enabled: boolean
   updatedAt: string
+}
+
+export interface FewShotExample {
+  id: number
+  question: string
+  sqlText: string
+  tablesUsed: string | null
+  tags: string | null
+  enabled: boolean
 }
 
 export interface RowPermission {
