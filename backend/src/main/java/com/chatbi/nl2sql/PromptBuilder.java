@@ -270,6 +270,8 @@ public class PromptBuilder {
             return "";
         }
         StringBuilder sb = new StringBuilder("## 最近对话（较早内容可能已按预算省略）\n");
+        sb.append("若当前问题是省略式追问（如“那去年呢”），沿用上一轮“已执行 SQL”中的指标与 GROUP BY 分组维度，")
+                .append("只改写用户明确调整的时间或筛选；用户明确要求汇总/不分组时才去掉分组。\n");
         for (int i = blocks.size() - 1; i >= 0; i--) {
             sb.append(blocks.get(i)).append('\n');
         }

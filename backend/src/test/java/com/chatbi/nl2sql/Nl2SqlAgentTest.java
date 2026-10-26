@@ -151,7 +151,7 @@ class Nl2SqlAgentTest {
         when(aiGenerator.available()).thenReturn(true);
         when(aiGenerator.generate(any(), any(), any(), any(), any(), any()))
                 .thenReturn(SqlGeneration.error("模型调用失败", "AI", 12, 3, "gpt-test"));
-        when(demoGenerator.generate(any(), any(), any()))
+        when(demoGenerator.generate(any(), any(), any(), any()))
                 .thenReturn(SqlGeneration.demo(GOOD_SQL, "规则引擎"));
         when(guardService.guard(anyString(), any())).thenReturn(passed(GOOD_SQL));
         when(explainCostService.explain(GOOD_SQL)).thenReturn(explainOk());
@@ -168,7 +168,7 @@ class Nl2SqlAgentTest {
     @Test
     void demoIsThePrimaryPlannerWhenAiIsDisabled() {
         when(aiGenerator.available()).thenReturn(false);
-        when(demoGenerator.generate(any(), any(), any()))
+        when(demoGenerator.generate(any(), any(), any(), any()))
                 .thenReturn(SqlGeneration.demo(GOOD_SQL, "规则引擎"));
         when(guardService.guard(eq(GOOD_SQL), any())).thenReturn(passed(GOOD_SQL));
         when(explainCostService.explain(GOOD_SQL)).thenReturn(explainOk());
@@ -179,6 +179,22 @@ class Nl2SqlAgentTest {
         assertThat(result.status()).isEqualTo("OK");
         assertThat(result.mode()).isEqualTo("DEMO");
         assertThat(result.degraded()).isFalse();
+    }
+
+    @Test
+    void passesThePreviousSqlToTheDemoPlannerForFollowUps() {
+        String previousSql = "SELECT region, SUM(amount) AS sales_amount FROM v_sales_fact GROUP BY region";
+        when(aiGenerator.available()).thenReturn(false);
+        when(demoGenerator.generate(any(), any(), any(), any()))
+                .thenReturn(SqlGeneration.demo(GOOD_SQL, "规则引擎"));
+        when(guardService.guard(eq(GOOD_SQL), any())).thenReturn(passed(GOOD_SQL));
+        when(explainCostService.explain(GOOD_SQL)).thenReturn(explainOk());
+        when(queryExecutor.execute(GOOD_SQL)).thenReturn(rows());
+
+        agent.ask("那去年呢", user(),
+                List.of(new ConversationTurn("今年各区域销售额", previousSql, "华东最高")));
+
+        verify(demoGenerator).generate(eq("那去年呢"), any(), eq("今年各区域销售额"), eq(previousSql));
     }
 
     @Test

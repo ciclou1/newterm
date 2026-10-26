@@ -263,7 +263,7 @@ public class Nl2SqlAgent {
         if (!aiGenerator.available()) {
             // AI is disabled by configuration: the deterministic rule engine is
             // the primary planner, not a degraded fallback.
-            return new GenerationOutcome(demoGenerator.generate(question, schema, previousQuestion),
+            return new GenerationOutcome(demoGenerator.generate(question, schema, previousQuestion, previousSql),
                     "DEMO", true, false, null);
         }
         SqlGeneration ai = aiGenerator.generate(question, schema, user, history, previousSql, feedback);
@@ -277,7 +277,7 @@ public class Nl2SqlAgent {
             // failed LLM call. The caller surfaces an ERROR with the reason.
             return new GenerationOutcome(ai, "AI", false, false, null);
         }
-        SqlGeneration demo = demoGenerator.generate(question, schema, previousQuestion);
+        SqlGeneration demo = demoGenerator.generate(question, schema, previousQuestion, previousSql);
         if (demo.hasSql() || demo.clarification() != null) {
             String reason = "AI 生成失败，已按 CHATBI_AI_ALLOW_DEMO_FALLBACK=true 降级到规则引擎"
                     + (ai.error() == null ? "" : "：" + ai.error());

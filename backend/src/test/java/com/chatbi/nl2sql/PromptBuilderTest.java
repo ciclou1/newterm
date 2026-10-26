@@ -97,6 +97,26 @@ class PromptBuilderTest {
     }
 
     @Test
+    void tellsTheModelToKeepThePreviousGroupingForFollowUps() {
+        List<ConversationTurn> history = List.of(new ConversationTurn("今年各区域销售额",
+                "SELECT region, SUM(amount) AS sales_amount FROM v_sales_fact GROUP BY region",
+                "华东最高"));
+
+        String prompt = builder.userPrompt("那去年呢", history, null, null);
+
+        assertThat(prompt).contains("SELECT region, SUM(amount) AS sales_amount")
+                .contains("GROUP BY region")
+                .contains("沿用上一轮");
+    }
+
+    @Test
+    void omitsFollowUpGuidanceWithoutHistory() {
+        String prompt = builder.userPrompt("今年销售额", List.of(), null, null);
+
+        assertThat(prompt).doesNotContain("沿用上一轮");
+    }
+
+    @Test
     void capsSchemaBlockAndOmitsLowPriorityExamples() {
         properties.getAi().setMaxSchemaChars(600);
         List<ExampleDoc> examples = new ArrayList<>();

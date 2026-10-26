@@ -38,6 +38,17 @@ public class DemoSqlGenerator {
     private static final Pattern EXPLICIT_YEAR = Pattern.compile("(20\\d{2})年");
     private static final Pattern EXPLICIT_QUARTER = Pattern.compile("(20\\d{2})年?第?([1-4一二三四])季度");
     private static final Pattern Q_QUARTER = Pattern.compile("(20\\d{2})年?[qQ]([1-4])");
+    private static final Pattern GROUP_BY = Pattern.compile(
+            "(?is)\\bGROUP\\s+BY\\s+(.+?)(?=\\bORDER\\s+BY\\b|\\bHAVING\\b|\\bLIMIT\\b|\\bOFFSET\\b|$)");
+    private static final Pattern SIMPLE_IDENTIFIER = Pattern.compile(
+            "[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?");
+
+    /**
+     * Phrases that explicitly ask for a single aggregate row. They suppress
+     * dimension inheritance so "那今年总额呢" does not silently keep grouping.
+     */
+    private static final List<String> AGGREGATE_ONLY_MARKERS = List.of(
+            "总额", "总计", "合计", "总共", "一共", "整体", "汇总", "不分组", "不分区域");
 
     private final com.chatbi.semantic.SemanticCatalog catalog;
     private final TextTokenizer tokenizer;
@@ -52,16 +63,28 @@ public class DemoSqlGenerator {
     }
 
     public SqlGeneration generate(String question, SchemaContext schema, String previousQuestion) {
+        return generate(question, schema, previousQuestion, null);
+    }
+
+    /**
+     * @param previousSql the SQL actually executed for the previous turn, used
+     *                    to recover its GROUP BY when the follow-up is
+     *                    elliptical ("那去年呢"). May be null.
+     */
+    public SqlGeneration generate(String question, SchemaContext schema, String previousQuestion,
+                                  String previousSql) {
         String current = question == null ? "" : question.trim();
         String previous = previousQuestion == null ? "" : previousQuestion.trim();
         String normalized = tokenizer.normalize(current);
         String previousNormalized = tokenizer.normalize(previous);
 
         List<MetricMatch> metricMatches = matchMetrics(normalized, true);
+        boolean metricInherited = false;
         String metricScope = normalized;
         if (metricMatches.isEmpty() && !previousNormalized.isBlank()) {
             metricMatches = matchMetrics(previousNormalized, false);
             metricScope = previousNormalized;
+            metricInherited = !metricMatches.isEmpty();
         }
         if (metricMatches.isEmpty()) {
             return clarificationForMissingMetric(normalized, previousNormalized);
@@ -95,6 +118,13 @@ public class DemoSqlGenerator {
         String timeScope = hasTimeMarker(normalized) || previousNormalized.isBlank() ? normalized : previousNormalized;
 
         List<DimensionMatch> dimensions = selectDimensions(normalized, primaryTable, selectedMetrics);
+        if (dimensions.isEmpty() && !previousNormalized.isBlank() && !requestsAggregateOnly(normalized)
+                && (metricInherited || isEllipticalFollowUp(normalized))) {
+            // Keep the previous turn's GROUP BY for a shortened follow-up
+            // ("今年各区域销售额" -> "那去年呢"), but only rewrite what the
+            // user changed (here: the time range).
+            dimensions = inheritDimensions(previousSql, previousNormalized, primaryTable);
+        }
         TimeRange timeRange = detectTimeRange(timeScope, selectedMetrics.getFirst().metric().getTimeColumn());
         List<EnumFilter> filters = selectEnumFilters(filterScope, primaryTable, dimensions, selectedMetrics);
         TopN topN = detectTopN(normalized, !dimensions.isEmpty());
@@ -203,6 +233,69 @@ public class DemoSqlGenerator {
                             c.getBusinessName(), match.alias(), match.start())));
         }
         return dimensions;
+    }
+
+    /**
+     * Recovers the grouping of the previous turn. The executed SQL is the most
+     * faithful source (it already passed guard/row-permission rewriting); the
+     * previous question is a fallback for callers that only kept the text.
+     */
+    private List<DimensionMatch> inheritDimensions(String previousSql, String previousQuestion, SemTable table) {
+        List<DimensionMatch> fromSql = dimensionsFromSql(previousSql, table);
+        if (!fromSql.isEmpty()) {
+            return fromSql;
+        }
+        return selectDimensions(previousQuestion, table, List.of());
+    }
+
+    private List<DimensionMatch> dimensionsFromSql(String sql, SemTable table) {
+        if (sql == null || sql.isBlank()) {
+            return List.of();
+        }
+        Matcher matcher = GROUP_BY.matcher(sql);
+        if (!matcher.find()) {
+            return List.of();
+        }
+        List<DimensionMatch> dimensions = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String raw : matcher.group(1).split(",")) {
+            String token = raw.trim();
+            if (!SIMPLE_IDENTIFIER.matcher(token).matches()) {
+                // Ordinal positions or expressions cannot be mapped back to a
+                // semantic dimension; fall back to the previous question.
+                return List.of();
+            }
+            String columnName = token.contains(".") ? token.substring(token.lastIndexOf('.') + 1) : token;
+            if (!seen.add(columnName)) {
+                continue;
+            }
+            snapshot().columnsOf(table.getTableName()).stream()
+                    .filter(c -> Boolean.TRUE.equals(c.getIsDimension()))
+                    .filter(c -> c.getColumnName().equalsIgnoreCase(columnName))
+                    .findFirst()
+                    .ifPresent(c -> dimensions.add(new DimensionMatch(c.getColumnName(),
+                            c.getBusinessName(), c.getBusinessName(), 0)));
+            if (dimensions.size() >= 2) {
+                break;
+            }
+        }
+        return dimensions;
+    }
+
+    private boolean requestsAggregateOnly(String question) {
+        return AGGREGATE_ONLY_MARKERS.stream().anyMatch(question::contains);
+    }
+
+    /**
+     * True for short context-dependent phrasings such as "那去年呢" or
+     * "那订单数呢" that are not self-contained questions.
+     */
+    private boolean isEllipticalFollowUp(String question) {
+        if (question.length() > 24) {
+            return false;
+        }
+        return question.startsWith("那") || question.endsWith("呢") || question.endsWith("呢？")
+                || question.contains("刚才") || question.contains("同样") || question.contains("还是");
     }
 
     private List<EnumFilter> selectEnumFilters(String question, SemTable table, List<DimensionMatch> dimensions,
