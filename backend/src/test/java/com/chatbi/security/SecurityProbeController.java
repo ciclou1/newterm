@@ -1,7 +1,9 @@
 package com.chatbi.security;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +33,16 @@ public class SecurityProbeController {
 
     @PostMapping("/api/semantic/probe")
     public Map<String, String> semanticWrite() {
+        return Map.of("status", "ok");
+    }
+
+    @PutMapping("/api/semantic/probe")
+    public Map<String, String> semanticUpdate() {
+        return Map.of("status", "ok");
+    }
+
+    @DeleteMapping("/api/semantic/probe")
+    public Map<String, String> semanticDelete() {
         return Map.of("status", "ok");
     }
 

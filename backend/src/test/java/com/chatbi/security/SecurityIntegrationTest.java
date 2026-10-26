@@ -20,8 +20,10 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -126,6 +128,12 @@ class SecurityIntegrationTest {
         mockMvc.perform(post("/api/semantic/probe").header("Authorization", bearer(viewer)))
                 .andExpect(status().isForbidden());
 
+        mockMvc.perform(put("/api/semantic/probe").header("Authorization", bearer(viewer)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/api/semantic/probe").header("Authorization", bearer(viewer)))
+                .andExpect(status().isForbidden());
+
         mockMvc.perform(get("/api/eval/probe").header("Authorization", bearer(viewer)))
                 .andExpect(status().isForbidden());
     }
@@ -142,6 +150,10 @@ class SecurityIntegrationTest {
                         .header("Authorization", authorization))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/semantic/probe").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/semantic/probe").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/semantic/probe").header("Authorization", authorization))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/eval/probe").header("Authorization", authorization))
                 .andExpect(status().isOk());

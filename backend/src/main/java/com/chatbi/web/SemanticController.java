@@ -4,15 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.chatbi.common.ChatBiException;
 import com.chatbi.domain.entity.FewShotExample;
 import com.chatbi.domain.entity.RowPermission;
+import com.chatbi.domain.entity.SemColumn;
 import com.chatbi.domain.entity.SemEnum;
 import com.chatbi.domain.entity.SemMetric;
 import com.chatbi.domain.entity.SemSynonym;
 import com.chatbi.domain.entity.SemTable;
 import com.chatbi.mapper.FewShotExampleMapper;
 import com.chatbi.mapper.RowPermissionMapper;
+import com.chatbi.mapper.SemColumnMapper;
 import com.chatbi.mapper.SemEnumMapper;
 import com.chatbi.mapper.SemMetricMapper;
 import com.chatbi.mapper.SemSynonymMapper;
+import com.chatbi.mapper.SemTableMapper;
 import com.chatbi.semantic.SemanticCatalog;
 import com.chatbi.semantic.SemanticIndexer;
 import com.chatbi.semantic.SemanticSnapshot;
@@ -21,13 +24,17 @@ import com.chatbi.sql.RowPermissionInjector;
 import com.chatbi.sql.SqlAstValidator;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -52,12 +59,15 @@ public class SemanticController {
     private final SemEnumMapper enumMapper;
     private final FewShotExampleMapper exampleMapper;
     private final RowPermissionMapper permissionMapper;
+    private final SemTableMapper tableMapper;
+    private final SemColumnMapper columnMapper;
     private final SqlAstValidator validator;
 
     public SemanticController(SemanticCatalog catalog, SemanticIndexer indexer,
                               CurrentUserService currentUserService, SemMetricMapper metricMapper,
                               SemSynonymMapper synonymMapper, SemEnumMapper enumMapper,
                               FewShotExampleMapper exampleMapper, RowPermissionMapper permissionMapper,
+                              SemTableMapper tableMapper, SemColumnMapper columnMapper,
                               SqlAstValidator validator) {
         this.catalog = catalog;
         this.indexer = indexer;
@@ -67,6 +77,8 @@ public class SemanticController {
         this.enumMapper = enumMapper;
         this.exampleMapper = exampleMapper;
         this.permissionMapper = permissionMapper;
+        this.tableMapper = tableMapper;
+        this.columnMapper = columnMapper;
         this.validator = validator;
     }
 
@@ -124,6 +136,141 @@ public class SemanticController {
         currentUserService.requireAdmin();
         return permissionMapper.selectList(new LambdaQueryWrapper<RowPermission>()
                 .orderByAsc(RowPermission::getUserId));
+    }
+
+    /**
+     * Table/column metadata is editable but never renamable: the physical view
+     * and column names are the contract used by the SQL guard and linker.
+     */
+    @PutMapping("/tables/{id}")
+    public SemTable updateTable(@PathVariable Long id, @Valid @RequestBody TableRequest request) {
+        currentUserService.requireAdmin();
+        SemTable table = tableMapper.selectById(id);
+        if (table == null) {
+            throw ChatBiException.notFound("语义表不存在");
+        }
+        table.setBusinessName(request.businessName());
+        table.setDomain(request.domain());
+        table.setDescription(blankToNull(request.description()));
+        table.setEnabled(request.enabled() == null || request.enabled());
+        table.setUpdatedAt(OffsetDateTime.now());
+        tableMapper.updateById(table);
+        reload();
+        return table;
+    }
+
+    @PutMapping("/columns/{id}")
+    public SemColumn updateColumn(@PathVariable Long id, @Valid @RequestBody ColumnRequest request) {
+        currentUserService.requireAdmin();
+        SemColumn column = columnMapper.selectById(id);
+        if (column == null) {
+            throw ChatBiException.notFound("语义字段不存在");
+        }
+        column.setBusinessName(request.businessName());
+        column.setDescription(blankToNull(request.description()));
+        column.setUnit(blankToNull(request.unit()));
+        column.setIsDimension(request.isDimension() == null
+                ? column.getIsDimension() : request.isDimension());
+        column.setIsMeasure(request.isMeasure() == null
+                ? column.getIsMeasure() : request.isMeasure());
+        column.setSensitive(request.sensitive() == null
+                ? column.getSensitive() : request.sensitive());
+        columnMapper.updateById(column);
+        reload();
+        return column;
+    }
+
+    @PostMapping("/enums")
+    public SemEnum saveEnum(@Valid @RequestBody EnumRequest request) {
+        currentUserService.requireAdmin();
+        SemanticSnapshot snapshot = catalog.snapshot();
+        if (snapshot.table(request.tableName()).isEmpty()) {
+            throw ChatBiException.badRequest("INVALID_TABLE", "表不在语义层中");
+        }
+        String columnName = request.columnName().trim().toLowerCase(Locale.ROOT);
+        boolean knownColumn = snapshot.columnsOf(request.tableName()).stream()
+                .anyMatch(column -> column.getColumnName().equalsIgnoreCase(columnName));
+        if (!knownColumn) {
+            throw ChatBiException.badRequest("INVALID_ENUM_COLUMN", "枚举所属字段不在该表中");
+        }
+
+        SemEnum item;
+        if (request.id() != null) {
+            item = enumMapper.selectById(request.id());
+            if (item == null) {
+                throw ChatBiException.notFound("枚举值不存在");
+            }
+        } else {
+            item = enumMapper.selectOne(new LambdaQueryWrapper<SemEnum>()
+                    .eq(SemEnum::getTableName, request.tableName())
+                    .eq(SemEnum::getColumnName, columnName)
+                    .eq(SemEnum::getEnumValue, request.enumValue()).last("LIMIT 1"));
+        }
+        if (item == null) {
+            item = new SemEnum();
+        }
+        item.setTableName(request.tableName());
+        item.setColumnName(columnName);
+        item.setEnumValue(request.enumValue());
+        item.setEnumLabel(request.enumLabel());
+        item.setDescription(blankToNull(request.description()));
+        if (item.getId() == null) {
+            enumMapper.insert(item);
+        } else {
+            enumMapper.updateById(item);
+        }
+        reload();
+        return item;
+    }
+
+    @DeleteMapping("/metrics/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMetric(@PathVariable Long id) {
+        currentUserService.requireAdmin();
+        if (metricMapper.deleteById(id) == 0) {
+            throw ChatBiException.notFound("指标不存在");
+        }
+        reload();
+    }
+
+    @DeleteMapping("/synonyms/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteSynonym(@PathVariable Long id) {
+        currentUserService.requireAdmin();
+        if (synonymMapper.deleteById(id) == 0) {
+            throw ChatBiException.notFound("同义词不存在");
+        }
+        reload();
+    }
+
+    @DeleteMapping("/enums/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteEnum(@PathVariable Long id) {
+        currentUserService.requireAdmin();
+        if (enumMapper.deleteById(id) == 0) {
+            throw ChatBiException.notFound("枚举值不存在");
+        }
+        reload();
+    }
+
+    @DeleteMapping("/examples/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteExample(@PathVariable Long id) {
+        currentUserService.requireAdmin();
+        if (exampleMapper.deleteById(id) == 0) {
+            throw ChatBiException.notFound("示例不存在");
+        }
+        reload();
+    }
+
+    @DeleteMapping("/permissions/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deletePermission(@PathVariable Long id) {
+        currentUserService.requireAdmin();
+        if (permissionMapper.deleteById(id) == 0) {
+            throw ChatBiException.notFound("行权限规则不存在");
+        }
+        reload();
     }
 
     @PostMapping("/metrics")
@@ -318,5 +465,27 @@ public class SemanticController {
                                     @NotBlank @Size(max = 1000) String allowedValues,
                                     @Size(max = 200) String description,
                                     Boolean enabled) {
+    }
+
+    public record TableRequest(@NotBlank @Size(max = 128) String businessName,
+                               @NotBlank @Size(max = 64) String domain,
+                               @Size(max = 500) String description,
+                               Boolean enabled) {
+    }
+
+    public record ColumnRequest(@NotBlank @Size(max = 128) String businessName,
+                                @Size(max = 500) String description,
+                                @Size(max = 16) String unit,
+                                Boolean isDimension,
+                                Boolean isMeasure,
+                                Boolean sensitive) {
+    }
+
+    public record EnumRequest(Long id,
+                              @NotBlank @Size(max = 64) String tableName,
+                              @NotBlank @Size(max = 64) String columnName,
+                              @NotBlank @Size(max = 128) String enumValue,
+                              @NotBlank @Size(max = 128) String enumLabel,
+                              @Size(max = 500) String description) {
     }
 }

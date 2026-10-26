@@ -91,6 +91,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/semantic/permissions/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/semantic/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/semantic/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/semantic/**").hasRole("ADMIN")
                         .requestMatchers("/api/eval/**").hasRole("ADMIN")
                         // Metrics expose global traffic, cost and error distribution.
                         // Administrators or the internal scrape token (that role is

@@ -33,6 +33,7 @@ public class AuditController {
     @GetMapping
     public List<QueryAudit> recent(@RequestParam(defaultValue = "50") int limit,
                                    @RequestParam(required = false) String status,
+                                   @RequestParam(required = false) Long beforeId,
                                    @RequestParam(defaultValue = "false") boolean all) {
         AppUser user = currentUserService.getCurrent();
         if (all) {
@@ -41,6 +42,9 @@ public class AuditController {
         int safeLimit = Math.max(1, Math.min(200, limit));
         LambdaQueryWrapper<QueryAudit> query = new LambdaQueryWrapper<QueryAudit>()
                 .orderByDesc(QueryAudit::getId).last("LIMIT " + safeLimit);
+        if (beforeId != null && beforeId > 0) {
+            query.lt(QueryAudit::getId, beforeId);
+        }
         if (!(currentUserService.isAdmin() && all)) {
             query.eq(QueryAudit::getUserId, user.getUsername());
         }
