@@ -89,6 +89,9 @@ services:
       context: ../..
       dockerfile: backend/Dockerfile
       args:
+        # Revision recorded by evaluation jobs. Defaults to "unknown"; pass
+        # GIT_COMMIT=$(git rev-parse --short HEAD) when building the image.
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
         # Registry-mirror overrides. Defaults stay digest-pinned; only the
         # registry prefix changes when a mirror is used.

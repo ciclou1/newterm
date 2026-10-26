@@ -48,6 +48,10 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked \
 
 # ---- Stage 2: runtime ----
 FROM ${JRE_IMAGE}
+# Revision of the source this image was built from, recorded with evaluation
+# jobs. Compose passes it as a build arg; plain `docker build` keeps "unknown".
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
 RUN addgroup -S chatbi && adduser -S chatbi -G chatbi \
     && apk add --no-cache wget tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \

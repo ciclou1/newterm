@@ -103,7 +103,8 @@ should be `0600`.
 ## 2. Start and verify
 
 ```bash
-docker compose --project-name chatbi-prod -f compose.yml up -d --build
+GIT_COMMIT=$(git rev-parse --short HEAD) \
+  docker compose --project-name chatbi-prod -f compose.yml up -d --build
 docker compose --project-name chatbi-prod -f compose.yml ps
 
 curl -k https://chatbi.example.com/healthz

@@ -277,6 +277,16 @@ Schema Linking 流程：
 
 评测入口仅限管理员（`POST /api/eval/run` 在 Controller 与 Service 两层都校验 `requireAdmin`）。原因是金标 SQL 不注入行级权限、返回全量数据，如果允许普通用户运行，就会成为绕过行级权限读取全量数据的旁路。每个任务记录运行用户、模型名、Prompt 版本号（`PromptBuilder.VERSION`）、评测集版本与 SHA-256、代码 commit（`GIT_COMMIT` / `GITHUB_SHA`），便于复现与横向对比。
 
+`GIT_COMMIT` 默认是 `unknown`。生产栈在构建后端镜像时传入当前提交，评测任务即可记录真实版本：
+
+```bash
+cd deploy/prod
+GIT_COMMIT=$(git rev-parse --short HEAD) \
+  docker compose --project-name chatbi-prod -f compose.yml up -d --build
+```
+
+该值通过 Compose build arg 写入后端镜像的 `GIT_COMMIT` 环境变量；修改后需要加 `--build` 重新构建镜像才会生效。
+
 运行方式：
 
 ```bash
