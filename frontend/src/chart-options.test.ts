@@ -44,6 +44,11 @@ interface PieSeries {
   data: { name: string; value: number }[]
 }
 
+interface TooltipOption {
+  renderMode?: string
+  formatter: (params: unknown) => string
+}
+
 describe('chart option mapping', () => {
   it('maps a backend pie chart to a real donut instead of a stacked bar', () => {
     const result = buildChartOption(chart({ type: 'pie' }), table, vars)
@@ -112,6 +117,23 @@ describe('chart option mapping', () => {
   it('returns an empty state when the chart has no categories', () => {
     const result = buildChartOption(chart({ categories: [], series: [] }), table, vars)
     expect(result.kind).toBe('empty')
+  })
+
+  it('renders tooltips as plain rich text instead of HTML', () => {
+    const pie = buildChartOption(chart({ type: 'pie' }), table, vars)
+    const pieTooltip = (pie.option as { tooltip: TooltipOption }).tooltip
+    expect(pieTooltip.renderMode).toBe('richText')
+    const pieText = pieTooltip.formatter({ name: '华东', value: 30, percent: 18.75 })
+    expect(pieText).toContain('华东')
+    expect(pieText).toContain('\n')
+    expect(pieText).not.toContain('<')
+
+    const bar = buildChartOption(chart({ type: 'bar' }), table, vars)
+    const barTooltip = (bar.option as { tooltip: TooltipOption }).tooltip
+    expect(barTooltip.renderMode).toBe('richText')
+    const barText = barTooltip.formatter([{ seriesName: '销售额', value: 80 }])
+    expect(barText).toContain('销售额')
+    expect(barText).not.toContain('<')
   })
 
   it('shortens month labels and disambiguates cross-year series', () => {

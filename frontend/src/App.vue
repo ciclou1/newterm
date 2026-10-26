@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ChatView from './components/ChatView.vue'
-import SemanticView from './components/SemanticView.vue'
-import EvalView from './components/EvalView.vue'
-import AuditView from './components/AuditView.vue'
 import LoginView from './components/LoginView.vue'
 import ChangePasswordDialog from './components/ChangePasswordDialog.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
+// Admin views are not on the first screen; split them out of the initial bundle.
+const SemanticView = defineAsyncComponent(() => import('./components/SemanticView.vue'))
+const EvalView = defineAsyncComponent(() => import('./components/EvalView.vue'))
+const AuditView = defineAsyncComponent(() => import('./components/AuditView.vue'))
 import {
   ApiError, api, clearSession, describeError, getStoredUser, getToken, isTokenExpired,
   storeSession, storeUser,

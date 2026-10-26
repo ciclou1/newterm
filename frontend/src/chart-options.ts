@@ -51,14 +51,6 @@ function safeString(value: unknown): string {
   return String(value)
 }
 
-export function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
 export function readableInk(hex: string): string {
   const value = hex.replace('#', '')
   if (value.length !== 6) return '#ffffff'
@@ -156,20 +148,19 @@ function pieOption(chart: ChartSpec, table: TableView, vars: ChartThemeVars): Ch
     animationDuration: 420,
     textStyle: { color: vars.ink2, fontFamily, fontSize: 11 },
     tooltip: {
+      renderMode: 'richText' as const,
       backgroundColor: vars.surfaceRaised,
       borderColor: vars.line,
       borderWidth: 1,
       padding: [8, 11],
       textStyle: { color: vars.ink, fontSize: 12, fontFamily },
-      extraCssText: 'box-shadow: var(--shadow-md); border-radius: 9px;',
       trigger: 'item',
       formatter: (params: { name?: string; value?: unknown; percent?: number }) => {
         const value = asNumber(params.value) ?? 0
         const share = typeof params.percent === 'number'
           ? formatPercent(params.percent, 1)
           : formatPercent(total > 0 ? (value / total) * 100 : 0, 1)
-        return `<div style="font-weight:600;margin-bottom:3px">${escapeHtml(params.name ?? '')}</div>
-          <div style="font-variant-numeric:tabular-nums">${formatTableValue(value)} · ${share}</div>`
+        return `${params.name ?? ''}\n${formatTableValue(value)} · ${share}`
       },
     },
     legend: {
@@ -262,12 +253,12 @@ function cartesianOption(chart: ChartSpec, table: TableView, vars: ChartThemeVar
 
   const baseText = { color: vars.ink2, fontFamily, fontSize: 11 }
   const tooltip = {
+    renderMode: 'richText' as const,
     backgroundColor: vars.surfaceRaised,
     borderColor: vars.line,
     borderWidth: 1,
     padding: [8, 11],
     textStyle: { color: vars.ink, fontSize: 12, fontFamily },
-    extraCssText: 'box-shadow: var(--shadow-md); border-radius: 9px;',
   }
   const categoryAxis = {
     type: 'category' as const,
@@ -344,15 +335,14 @@ function cartesianOption(chart: ChartSpec, table: TableView, vars: ChartThemeVar
         : undefined,
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
-        const rows = list.map((entry: { marker?: string; seriesName?: string; value?: unknown }) => {
-          const hint = hintFor(table, entry.seriesName ?? '')
-          return `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:150px">
-            <span>${entry.marker ?? ''}${escapeHtml(entry.seriesName ?? '')}</span>
-            <strong style="font-variant-numeric:tabular-nums">${formatTableValue(entry.value, hint)}</strong>
-          </div>`
-        })
         const axisValue = (list[0] as { axisValueLabel?: string } | undefined)?.axisValueLabel
-        return `${axisValue ? `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(axisValue)}</div>` : ''}${rows.join('')}`
+        const lines: string[] = []
+        if (axisValue) lines.push(axisValue)
+        list.forEach((entry: { seriesName?: string; value?: unknown }) => {
+          const hint = hintFor(table, entry.seriesName ?? '')
+          lines.push(`${entry.seriesName ?? ''}  ${formatTableValue(entry.value, hint)}`)
+        })
+        return lines.join('\n')
       },
     },
     legend: multi ? {
