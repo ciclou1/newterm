@@ -141,7 +141,7 @@ export CHATBI_JWT_SECRET="$(openssl rand -base64 48)"
 ### 3.3 运行测试与构建
 
 ```bash
-./mvnw -pl backend test                 # 175 个测试（P0 + 认证/RBAC/配额 + LLM）
+./mvnw -pl backend test                 # 180 个测试（P0 + 认证/RBAC/配额 + LLM + 部署加固）
 ./mvnw -o clean package -DskipTests     # 后端 + MCP Server
 cd frontend && npm run build            # vue-tsc + Vite 生产构建
 ```
@@ -363,8 +363,8 @@ Prometheus 指标前缀为 `chatbi`：
 
 AI 诊断：
 
-- `GET /actuator/health` 的 `ai` 组件：`mode`、`model`、`baseUrl`、`clientAvailable`、`jsonModeSupported`、`totalTimeoutSeconds`、调用/失败/重试/实际 HTTP 尝试次数、最近一次错误与 Token；错误文本中的 `sk-*` 与 `Bearer *` 会被脱敏。
-- `GET /api/health/ai`：同一份快照，便于脚本与告警查询；两者都不包含 API Key。
+- `GET /actuator/health` 只返回总体状态（`show-details: never`），匿名可访问，用于容器探活。
+- `GET /api/health/ai`（需要登录，建议 ADMIN）：`mode`、`model`、`baseUrl`、`clientAvailable`、`jsonModeSupported`、`totalTimeoutSeconds`、调用/失败/重试/实际 HTTP 尝试次数、最近一次错误与 Token；错误文本中的 `sk-*` 与 `Bearer *` 会被脱敏，不包含 API Key。
 
 审计表 `query_audit` 保存每次请求的问题、生成 SQL、最终 SQL、状态、失败阶段、尝试次数、行数、耗时、Token、成本与 Schema 命中；用户可对查询提交反馈（`POST /api/feedback`）。
 
@@ -509,6 +509,28 @@ npx -y supergateway \
 - `CHATBI_AI_ALLOW_DEMO_FALLBACK=false` 时模型失败返回 ERROR；显式设为 `true` 才会降级到规则引擎，并在响应中标记 `degraded=true`。
 
 > 生产环境务必修改数据库密码、关闭演示身份头、限制网络暴露，并为只读账号配置最小权限。
+
+### 9.5 生产部署（TLS / 备份 / 可观测性）
+
+仓库根目录的 `docker-compose.yml` 是**本地演示栈**。生产请使用 `deploy/prod/`：
+
+```bash
+cd deploy/prod
+cp .env.example .env && chmod 600 .env   # 填入必填密钥，缺失时 compose 直接报错
+scripts/gen-self-signed-cert.sh chatbi.example.com   # 或挂载正式证书
+docker compose --project-name chatbi-prod -f compose.yml up -d --build
+```
+
+- **Bootstrap 管理员**：首启用 `CHATBI_BOOTSTRAP_ADMIN_PASSWORD`（≥12 位）替换种子口令；随后调用 `POST /api/auth/password` 立即改密，并从 `.env` 移除该项。
+- **JWT secret**：`openssl rand -base64 48`，写入 `.env`；docker/prod 对空值、过短或 `local-dev-only` 前缀直接拒绝启动。
+- **模型 Key**：仅通过 `CHATBI_AI_API_KEY` 环境变量注入，不写入镜像、日志或审计表。
+- **网络**：仅 edge 发布 80/443（80 跳转 443）；Postgres、Redis、backend、frontend、Prometheus、Grafana 均无宿主端口；Postgres/Redis 位于无外网路由的 `internal` 网络，Redis 启用 `requirepass`。
+- **TLS/代理**：edge 终止 TLS，覆盖（而非透传）`X-Forwarded-For`，带 HSTS/CSP 等安全头，代理层对登录/问数/通用 API 限流，请求超时与 60 秒 LLM 硬预算对齐。
+- **数据**：`scripts/backup-postgres.sh` / `backup-redis.sh` 带保留策略；`restore-postgres.sh` 默认恢复到临时库并校验 Flyway、种子用户、6 个视图与 `chatbi_ro` 仅 6 个 SELECT 授权。
+- **可观测性**：Prometheus 用 `CHATBI_METRICS_TOKEN` 抓取 `/actuator/prometheus`（该令牌仅在此路径授予 `ROLE_METRICS`），告警覆盖 5xx、查询 P95、LLM 失败/超时、审计 fail-closed、DB/Redis down、配额拒绝；Grafana 自动加载 dashboard；prod profile 输出带 `requestId` 的 JSON 日志。
+
+完整运行手册（密钥轮换、备份恢复演练、模型故障降级、SLO）见
+[`deploy/prod/README.md`](deploy/prod/README.md)。
 
 ---
 

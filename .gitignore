@@ -21,6 +21,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Production deployment secrets and backups
+deploy/prod/.env
+deploy/prod/certs/*
+!deploy/prod/certs/.gitkeep
+deploy/prod/backups/
+
 # AO / local tools
 .tools/
 .ao/

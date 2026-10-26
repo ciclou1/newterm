@@ -40,6 +40,7 @@ spring:
     redis:
       host: ${CHATBI_REDIS_HOST:localhost}
       port: ${CHATBI_REDIS_PORT:6379}
+      password: ${CHATBI_REDIS_PASSWORD:}
       timeout: 1500ms
       connect-timeout: 1500ms
       lettuce:
@@ -131,6 +132,9 @@ chatbi:
     max-history-turns: ${CHATBI_AI_MAX_HISTORY_TURNS:3}
     max-question-chars: ${CHATBI_AI_MAX_QUESTION_CHARS:2000}
     allow-demo-fallback: ${CHATBI_AI_ALLOW_DEMO_FALLBACK:false}
+  metrics:
+    # Bearer token accepted only on /actuator/prometheus. Empty disables it.
+    scrape-token: ${CHATBI_METRICS_TOKEN:}
   query:
     url: ${CHATBI_QUERY_DB_URL:jdbc:postgresql://localhost:5432/chatbi?stringtype=unspecified}
     username: ${CHATBI_READONLY_DB_USER:chatbi_ro}
@@ -209,6 +213,15 @@ spring:
   config:
     activate:
       on-profile: prod
+
+logging:
+  # JSON lines for log shippers; requestId is injected by RequestIdFilter.
+  structured:
+    format:
+      console: logstash
+  level:
+    root: INFO
+    com.chatbi: INFO
 
 chatbi:
   auth:

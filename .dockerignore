@@ -5,6 +5,9 @@
 .vscode
 .env
 .env.*
+deploy/prod/.env
+deploy/prod/certs
+deploy/prod/backups
 *.log
 **/target
 **/node_modules

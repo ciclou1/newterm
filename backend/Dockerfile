@@ -12,8 +12,11 @@
 # transient failures, and keeps ~/.m2 in a BuildKit cache mount so dependency
 # downloads survive source changes and layer invalidation.
 #
-# Base images are pinned by manifest-list digest (multi-arch).
-FROM maven@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS build
+# Base images are pinned by manifest-list digest (multi-arch). Override the
+# build args to use a registry mirror without changing the pin.
+ARG MAVEN_IMAGE=maven@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237
+ARG JRE_IMAGE=eclipse-temurin@sha256:b48e02e0ea88d7bfb305335df94923bdef394905f4147dccd52e873cf17b1088
+FROM ${MAVEN_IMAGE} AS build
 WORKDIR /workspace
 
 # Optional corporate/regional Maven mirror. Empty = Maven Central.
@@ -44,7 +47,7 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked \
       -Daether.connector.requestTimeout=60000
 
 # ---- Stage 2: runtime ----
-FROM eclipse-temurin@sha256:b48e02e0ea88d7bfb305335df94923bdef394905f4147dccd52e873cf17b1088
+FROM ${JRE_IMAGE}
 RUN addgroup -S chatbi && adduser -S chatbi -G chatbi \
     && apk add --no-cache wget tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \

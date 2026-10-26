@@ -56,4 +56,12 @@ public class ChatBiMetrics {
     public void quotaRejected(String type) {
         registry.counter("chatbi.quota.rejected", "type", type).increment();
     }
+
+    /**
+     * An audit write failed and the result was withheld. Any sustained rate is
+     * an availability and compliance incident.
+     */
+    public void auditFailClosed() {
+        registry.counter("chatbi.audit.fail.closed").increment();
+    }
 }

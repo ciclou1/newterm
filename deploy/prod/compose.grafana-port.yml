@@ -1,0 +1,7 @@
+# Optional local access to Grafana without publishing a port by default.
+#   docker compose -f compose.yml -f compose.grafana-port.yml up -d grafana
+# Binds to loopback only; never expose it on a public interface.
+services:
+  grafana:
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"

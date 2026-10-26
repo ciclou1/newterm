@@ -4,8 +4,10 @@ import com.chatbi.common.ChatBiException;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.QueryAudit;
 import com.chatbi.mapper.QueryAuditMapper;
+import com.chatbi.metrics.ChatBiMetrics;
 import com.chatbi.nl2sql.AgentResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -19,7 +21,9 @@ import static org.mockito.Mockito.when;
 class AuditServiceTest {
 
     private final QueryAuditMapper auditMapper = mock(QueryAuditMapper.class);
-    private final AuditService auditService = new AuditService(auditMapper, new ObjectMapper());
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final AuditService auditService =
+            new AuditService(auditMapper, new ObjectMapper(), new ChatBiMetrics(meterRegistry));
 
     @Test
     void returnsTheGeneratedAuditIdOnSuccess() {
@@ -46,6 +50,7 @@ class AuditServiceTest {
                     assertThat(exception.getCode()).isEqualTo("AUDIT_UNAVAILABLE");
                     assertThat(exception.getStatus().is5xxServerError()).isTrue();
                 });
+        assertThat(meterRegistry.counter("chatbi.audit.fail.closed").count()).isEqualTo(1.0);
     }
 
     private AppUser user() {

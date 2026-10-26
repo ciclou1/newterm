@@ -8,7 +8,11 @@ BEGIN
     END IF;
 END $$;
 
-GRANT CONNECT ON DATABASE chatbi TO chatbi_ro;
+-- The database name is whatever POSTGRES_DB created, so do not hardcode it.
+DO $$
+BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO chatbi_ro', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO chatbi_ro;
 
 -- Never grant blanket SELECT. app_user, query_audit, conversation*,

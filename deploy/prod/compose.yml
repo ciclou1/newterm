@@ -1,0 +1,299 @@
+# ChatBI production stack.
+#
+#   cd deploy/prod && cp .env.example .env && edit .env && docker compose up -d --build
+#
+# Contract:
+#   * every secret is required via ${VAR:?}; there are no default passwords
+#   * postgres/redis/backend/frontend/prometheus/grafana have no host ports
+#   * only the edge proxy publishes 80/443, and 80 redirects to 443
+#   * postgres/redis live on an internal network with no outbound route
+#   * the backend has a separate egress network for the LLM gateway only
+
+name: chatbi-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  stop_grace_period: 30s
+
+services:
+  postgres:
+    <<: *hardening
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      CHATBI_READONLY_DB_PASSWORD: ${CHATBI_READONLY_DB_PASSWORD:?CHATBI_READONLY_DB_PASSWORD is required}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 2.0
+
+  redis:
+    <<: *hardening
+    image: ${REDIS_IMAGE:-redis@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541}
+    # Run as the image's redis user; the named volume inherits /data ownership.
+    user: "999:1000"
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${CHATBI_REDIS_PASSWORD:?CHATBI_REDIS_PASSWORD is required}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - "900 1"
+    environment:
+      REDISCLI_AUTH: ${CHATBI_REDIS_PASSWORD:?CHATBI_REDIS_PASSWORD is required}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    mem_limit: 320m
+    cpus: 1.0
+
+  backend:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
+        # Registry-mirror overrides. Defaults stay digest-pinned; only the
+        # registry prefix changes when a mirror is used.
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin@sha256:b48e02e0ea88d7bfb305335df94923bdef394905f4147dccd52e873cf17b1088}
+    image: chatbi-backend:prod
+    init: true
+    read_only: true
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CHATBI_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}?stringtype=unspecified
+      CHATBI_DB_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      CHATBI_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      CHATBI_QUERY_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}?stringtype=unspecified
+      CHATBI_READONLY_DB_USER: chatbi_ro
+      CHATBI_READONLY_DB_PASSWORD: ${CHATBI_READONLY_DB_PASSWORD:?CHATBI_READONLY_DB_PASSWORD is required}
+      CHATBI_REDIS_HOST: redis
+      CHATBI_REDIS_PORT: "6379"
+      CHATBI_REDIS_PASSWORD: ${CHATBI_REDIS_PASSWORD:?CHATBI_REDIS_PASSWORD is required}
+      CHATBI_JWT_SECRET: ${CHATBI_JWT_SECRET:?CHATBI_JWT_SECRET is required}
+      CHATBI_JWT_ISSUER: chatbi
+      CHATBI_JWT_TTL_SECONDS: "3600"
+      CHATBI_BOOTSTRAP_ADMIN_USERNAME: ${CHATBI_BOOTSTRAP_ADMIN_USERNAME:-lisi}
+      CHATBI_BOOTSTRAP_ADMIN_PASSWORD: ${CHATBI_BOOTSTRAP_ADMIN_PASSWORD:?CHATBI_BOOTSTRAP_ADMIN_PASSWORD is required on first start}
+      CHATBI_DEMO_HEADER_ENABLED: "false"
+      CHATBI_TRUST_FORWARDED_HEADERS: "true"
+      CHATBI_ALLOWED_ORIGINS: https://${CHATBI_PUBLIC_HOST:?CHATBI_PUBLIC_HOST is required}
+      CHATBI_METRICS_TOKEN: ${CHATBI_METRICS_TOKEN:?CHATBI_METRICS_TOKEN is required}
+      CHATBI_MCP_SERVICE_TOKEN: ${CHATBI_MCP_SERVICE_TOKEN:-}
+      CHATBI_MCP_SERVICE_USER: ${CHATBI_MCP_SERVICE_USER:-mcp-service}
+      CHATBI_RATE_LIMIT_ENABLED: "true"
+      CHATBI_RATE_LIMIT_QPM: ${CHATBI_RATE_LIMIT_QPM:-10}
+      CHATBI_RATE_LIMIT_BURST: "0"
+      CHATBI_LOGIN_RATE_LIMIT_QPM: ${CHATBI_LOGIN_RATE_LIMIT_QPM:-20}
+      CHATBI_LOGIN_FAILURE_THRESHOLD: "5"
+      CHATBI_LOGIN_FAILURE_WINDOW_SECONDS: "900"
+      CHATBI_LOGIN_LOCK_SECONDS: "900"
+      CHATBI_DAILY_TOKEN_LIMIT: ${CHATBI_DAILY_TOKEN_LIMIT:-2000000}
+      CHATBI_DAILY_COST_LIMIT_USD: ${CHATBI_DAILY_COST_LIMIT_USD:-5.00}
+      CHATBI_QUOTA_RESERVE_TOKENS: "4096"
+      CHATBI_QUOTA_RESERVE_COST_USD: "0.05"
+      CHATBI_QUERY_MAX_ROWS: ${CHATBI_QUERY_MAX_ROWS:-500}
+      CHATBI_QUERY_TIMEOUT_SECONDS: ${CHATBI_QUERY_TIMEOUT_SECONDS:-8}
+      CHATBI_QUERY_MAX_EXPLAIN_COST: "250000"
+      CHATBI_QUERY_MAX_REPAIRS: "2"
+      CHATBI_AI_ENABLED: ${CHATBI_AI_ENABLED:-false}
+      CHATBI_AI_API_KEY: ${CHATBI_AI_API_KEY:-}
+      CHATBI_AI_BASE_URL: ${CHATBI_AI_BASE_URL:-https://api.openai.com}
+      CHATBI_AI_MODEL: ${CHATBI_AI_MODEL:-gpt-4.1-mini}
+      CHATBI_AI_TEMPERATURE: ${CHATBI_AI_TEMPERATURE:-0.1}
+      CHATBI_AI_MAX_TOKENS: ${CHATBI_AI_MAX_TOKENS:-1400}
+      CHATBI_AI_JSON_MODE: "true"
+      CHATBI_AI_TIMEOUT_SECONDS: "45"
+      CHATBI_AI_CONNECT_TIMEOUT_SECONDS: "10"
+      CHATBI_AI_TOTAL_TIMEOUT_SECONDS: ${CHATBI_AI_TOTAL_TIMEOUT_SECONDS:-60}
+      CHATBI_AI_MAX_RETRIES: ${CHATBI_AI_MAX_RETRIES:-2}
+      CHATBI_AI_RETRY_BACKOFF_MS: "800"
+      CHATBI_AI_JSON_MODE_PROBE_TTL_SECONDS: "600"
+      CHATBI_AI_INPUT_COST_PER_MILLION: ${CHATBI_AI_INPUT_COST_PER_MILLION:-0}
+      CHATBI_AI_OUTPUT_COST_PER_MILLION: ${CHATBI_AI_OUTPUT_COST_PER_MILLION:-0}
+      CHATBI_AI_PRICE_CURRENCY: USD
+      CHATBI_AI_ALLOW_DEMO_FALLBACK: ${CHATBI_AI_ALLOW_DEMO_FALLBACK:-false}
+      TZ: ${TZ:-Asia/Shanghai}
+    tmpfs:
+      - /tmp:size=256m
+    networks:
+      - internal
+      - egress
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    mem_limit: 1536m
+    cpus: 2.0
+
+  frontend:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: deploy/prod/frontend/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx@sha256:060849a174666c53439dc7cecbf8f67e225c7cbfb1a44ca97915d9a172a81e6d}
+    image: chatbi-frontend:prod
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 128m
+    cpus: 0.5
+
+  edge:
+    <<: *hardening
+    build:
+      context: ./edge
+      args:
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx@sha256:060849a174666c53439dc7cecbf8f67e225c7cbfb1a44ca97915d9a172a81e6d}
+    image: chatbi-edge:prod
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ${CHATBI_TLS_CERT:-./certs/server.crt}:/etc/nginx/certs/server.crt:ro
+      - ${CHATBI_TLS_KEY:-./certs/server.key}:/etc/nginx/certs/server.key:ro
+    networks:
+      - edge
+      - internal
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://127.0.0.1:8443/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 128m
+    cpus: 1.0
+
+  prometheus:
+    <<: *hardening
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        printf '%s' "$$CHATBI_METRICS_TOKEN" > /tmp/metrics_token
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=15d
+    environment:
+      CHATBI_METRICS_TOKEN: ${CHATBI_METRICS_TOKEN:?CHATBI_METRICS_TOKEN is required}
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 512m
+    cpus: 1.0
+
+  grafana:
+    <<: *hardening
+    image: ${GRAFANA_IMAGE:-grafana/grafana-oss@sha256:408afb9726de5122b00a2576763a8a57a3c86d5b0eff5305bc994ceb3eb96c3f}
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_DOMAIN: ${CHATBI_PUBLIC_HOST:?CHATBI_PUBLIC_HOST is required}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    mem_limit: 256m
+    cpus: 1.0
+
+networks:
+  # Public ingress: edge proxy + static frontend.
+  edge:
+    driver: bridge
+  # Data plane: no route to or from the internet.
+  internal:
+    driver: bridge
+    internal: true
+  # Outbound-only path used by the backend to reach the model gateway.
+  egress:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  promdata:
+  grafanadata:

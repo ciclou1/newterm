@@ -19,6 +19,7 @@ public class ChatBiProperties {
     private Quota quota = new Quota();
     private SchemaLink schemaLink = new SchemaLink();
     private Embedding embedding = new Embedding();
+    private Metrics metrics = new Metrics();
 
     @Data
     public static class Ai {
@@ -179,5 +180,14 @@ public class ChatBiProperties {
         private String provider = "hash";
         private int dimensions = 512;
         private String model = "";
+    }
+
+    /**
+     * Internal scrape credentials. Empty disables the filter entirely; when
+     * set, the bearer token can read /actuator/prometheus and nothing else.
+     */
+    @Data
+    public static class Metrics {
+        private String scrapeToken = "";
     }
 }

@@ -4,6 +4,7 @@ import com.chatbi.common.ChatBiException;
 import com.chatbi.domain.entity.AppUser;
 import com.chatbi.domain.entity.QueryAudit;
 import com.chatbi.mapper.QueryAuditMapper;
+import com.chatbi.metrics.ChatBiMetrics;
 import com.chatbi.nl2sql.AgentResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -18,10 +19,13 @@ public class AuditService {
 
     private final QueryAuditMapper auditMapper;
     private final ObjectMapper objectMapper;
+    private final ChatBiMetrics metrics;
 
-    public AuditService(QueryAuditMapper auditMapper, ObjectMapper objectMapper) {
+    public AuditService(QueryAuditMapper auditMapper, ObjectMapper objectMapper,
+                        ChatBiMetrics metrics) {
         this.auditMapper = auditMapper;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     public Long record(String requestId, java.util.UUID conversationId, AppUser user, AgentResult result) {
@@ -51,6 +55,7 @@ public class AuditService {
         } catch (Exception e) {
             // Fail closed: an untraceable analytical query must not be
             // presented to the user as a successful answer.
+            metrics.auditFailClosed();
             log.error("Audit insert failed, refusing to return the query result", e);
             throw new ChatBiException("AUDIT_UNAVAILABLE",
                     "审计写入失败，查询结果未返回；请稍后重试或联系管理员",

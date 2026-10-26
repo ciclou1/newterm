@@ -38,6 +38,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    public MetricsScrapeTokenFilter metricsScrapeTokenFilter(ChatBiProperties properties) {
+        return new MetricsScrapeTokenFilter(properties.getMetrics().getScrapeToken());
+    }
+
+    @Bean
     public RateLimitFilter rateLimitFilter(TokenBucketRateLimiter limiter,
                                            ChatBiProperties properties,
                                            ChatBiMetrics chatBiMetrics,
@@ -55,6 +60,7 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             ServiceTokenAuthenticationFilter serviceTokenAuthenticationFilter,
+            MetricsScrapeTokenFilter metricsScrapeTokenFilter,
             RateLimitFilter rateLimitFilter,
             ObjectProvider<DemoHeaderAuthenticationFilter> demoHeaderFilter,
             SecurityErrorWriter errorWriter,
@@ -86,12 +92,16 @@ public class SecurityConfig {
                         .requestMatchers("/api/semantic/permissions/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/semantic/**").hasRole("ADMIN")
                         .requestMatchers("/api/eval/**").hasRole("ADMIN")
-                        // Metrics expose global traffic, cost and error distribution:
-                        // only administrators may read them. Health stays public above.
+                        // Metrics expose global traffic, cost and error distribution.
+                        // Administrators or the internal scrape token (that role is
+                        // only ever granted on this exact path) may read them.
+                        .requestMatchers(MetricsScrapeTokenFilter.PATH)
+                        .hasAnyRole("ADMIN", MetricsScrapeTokenFilter.ROLE)
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(serviceTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(jwtAuthenticationFilter, ServiceTokenAuthenticationFilter.class);
+                .addFilterAfter(metricsScrapeTokenFilter, ServiceTokenAuthenticationFilter.class)
+                .addFilterAfter(jwtAuthenticationFilter, MetricsScrapeTokenFilter.class);
 
         DemoHeaderAuthenticationFilter demo = demoHeaderFilter.getIfAvailable();
         if (demo != null) {

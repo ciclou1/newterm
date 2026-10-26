@@ -1,0 +1,2 @@
+# TLS material is generated locally and never committed.
+# scripts/gen-self-signed-cert.sh writes server.crt/server.key here.

@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: chatbi-prod
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # The backend requires authentication on /actuator/prometheus. compose.yml
+  # materialises CHATBI_METRICS_TOKEN into /tmp/metrics_token at startup; that
+  # token only grants ROLE_METRICS on this exact path.
+  - job_name: chatbi-backend
+    metrics_path: /actuator/prometheus
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials_file: /tmp/metrics_token
+    static_configs:
+      - targets: ["backend:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

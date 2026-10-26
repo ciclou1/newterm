@@ -1,0 +1,127 @@
+groups:
+  - name: chatbi-availability
+    rules:
+      - alert: ChatBiBackendDown
+        expr: up{job="chatbi-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ChatBI backend is not scrapable"
+          description: "Prometheus cannot reach backend:8080/actuator/prometheus for 1m. Check container health and edge 5xx."
+
+      - alert: ChatBiPostgresDown
+        expr: chatbi_dependency_up{dependency="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL dependency probe failing"
+          description: "SELECT 1 failed for 2m. Queries and audit writes will be fail-closed."
+
+      - alert: ChatBiRedisDown
+        expr: chatbi_dependency_up{dependency="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis dependency probe failing"
+          description: "Redis PING failed for 2m. Quota reservation is fail-closed (503 QUOTA_UNAVAILABLE)."
+
+      - alert: ChatBiHigh5xxRate
+        expr: >
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of HTTP responses are 5xx"
+          description: "Check audit fail-closed, quota unavailability and LLM errors."
+
+  - name: chatbi-latency
+    rules:
+      - alert: ChatBiQueryP95High
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (rate(chatbi_query_duration_seconds_bucket[5m]))) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ChatBI query P95 above 10s"
+          description: "Query latency P95 has exceeded the 10s SLO for 10m."
+
+      - alert: ChatBiLlmLatencyNearDeadline
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (rate(chatbi_llm_request_duration_seconds_bucket[5m]))) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM calls are approaching the 60s hard deadline"
+          description: "P95 LLM latency is above 50s; the backend aborts at CHATBI_AI_TOTAL_TIMEOUT_SECONDS."
+
+      - alert: ChatBiLlmDeadlineExceeded
+        expr: increase(chatbi_llm_calls_total{outcome="error"}[10m]) > 0 and on() (histogram_quantile(0.5, sum by (le) (rate(chatbi_llm_request_duration_seconds_bucket[10m]))) > 55)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM failures coincide with latency at the hard deadline"
+          description: "Errors plus a median near 60s usually means calls are timing out rather than being rejected."
+
+  - name: chatbi-llm
+    rules:
+      - alert: ChatBiLlmFailureRate
+        expr: >
+          sum(rate(chatbi_llm_calls_total{outcome="error"}[5m]))
+          / clamp_min(sum(rate(chatbi_llm_calls_total[5m])), 0.001) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of LLM calls are failing"
+          description: "Check gateway status, API key/quota, and fallback policy."
+
+      - alert: ChatBiLlmRetryStorm
+        expr: >
+          sum(rate(chatbi_llm_http_attempts_total[5m]))
+          / clamp_min(sum(rate(chatbi_llm_calls_total[5m])), 0.001) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM HTTP attempts exceed twice the logical calls"
+          description: "Sustained retries indicate gateway instability; the total deadline bounds each request."
+
+  - name: chatbi-governance
+    rules:
+      - alert: ChatBiAuditFailClosed
+        expr: increase(chatbi_audit_fail_closed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Audit writes are failing; query results are being withheld"
+          description: "A single failure means an untraceable analytical query occurred. Check PostgreSQL and disk."
+
+      - alert: ChatBiQuotaRejectedSpike
+        expr: increase(chatbi_quota_rejected_total[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual volume of quota rejections"
+          description: "More than 20 reservation rejections in 10m; investigate usage or an abusive client."
+
+      - alert: ChatBiRateLimitedSpike
+        expr: increase(chatbi_rate_limited_total[10m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rate limiting is rejecting a large volume of traffic"
+          description: "Could be an attack or a misbehaving integration."
