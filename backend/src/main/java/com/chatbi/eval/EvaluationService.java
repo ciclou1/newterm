@@ -163,6 +163,15 @@ public class EvaluationService {
         long latency = System.currentTimeMillis() - start;
         String status = answer.status();
         String generatedSql = answer.finalSql() == null ? answer.generatedSql() : answer.finalSql();
+        // Usage is recorded for every outcome, including clarify and failures:
+        // failed generations still consumed (and were billed for) tokens, and
+        // the Langfuse trace needs those numbers to expose cost. A missing
+        // usage object becomes 0 tokens / null cost and model.
+        AgentResult.Usage usage = answer.usage();
+        int promptTokens = usage == null ? 0 : usage.promptTokens();
+        int completionTokens = usage == null ? 0 : usage.completionTokens();
+        BigDecimal costUsd = usage == null ? null : usage.costUsd();
+        String model = usage == null ? null : usage.model();
 
         if ("CLARIFY".equals(question.expectedStatus())) {
             boolean passed = "CLARIFY".equals(status);
@@ -170,7 +179,8 @@ public class EvaluationService {
                     question.question(), question.expectedStatus(), status, passed,
                     passed ? "按预期发起口径澄清" : "期望澄清，实际状态 " + status,
                     question.goldenSql(), generatedSql, 0, 0, latency, answer.mode(),
-                    answer.failure() == null ? null : answer.failure().code());
+                    answer.failure() == null ? null : answer.failure().code(),
+                    promptTokens, completionTokens, costUsd, model);
         }
 
         if (!answer.ok()) {
@@ -180,7 +190,8 @@ public class EvaluationService {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false,
                     "执行失败: " + detail, question.goldenSql(), generatedSql, 0, 0,
-                    latency, answer.mode(), answer.failure() == null ? status : answer.failure().code());
+                    latency, answer.mode(), answer.failure() == null ? status : answer.failure().code(),
+                    promptTokens, completionTokens, costUsd, model);
         }
 
         QueryExecutor.QueryExecution expected = golden(question.goldenSql());
@@ -192,20 +203,23 @@ public class EvaluationService {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false,
                     "基准 SQL 执行失败: " + expected.error(), question.goldenSql(), generatedSql,
-                    0, 0, latency, answer.mode(), "GOLDEN_SQL_ERROR");
+                    0, 0, latency, answer.mode(), "GOLDEN_SQL_ERROR",
+                    promptTokens, completionTokens, costUsd, model);
         }
         if (!actual.success()) {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false,
                     "生成 SQL 未返回可比较的结果集: " + actual.error(), question.goldenSql(), generatedSql,
-                    expected.rows().size(), 0, latency, answer.mode(), "GENERATED_SQL_ERROR");
+                    expected.rows().size(), 0, latency, answer.mode(), "GENERATED_SQL_ERROR",
+                    promptTokens, completionTokens, costUsd, model);
         }
         Comparison comparison = compare(expected, actual);
         return new CaseResult(question.id(), question.category(), question.difficulty(),
                 question.question(), question.expectedStatus(), status, comparison.matched(),
                 comparison.message(), question.goldenSql(), generatedSql,
                 expected.rows().size(), actual.rows().size(), latency, answer.mode(),
-                comparison.matched() ? null : "RESULT_MISMATCH");
+                comparison.matched() ? null : "RESULT_MISMATCH",
+                promptTokens, completionTokens, costUsd, model);
     }
 
     private QueryExecutor.QueryExecution golden(String sql) {
@@ -418,14 +432,24 @@ public class EvaluationService {
             @JsonProperty("questions") List<EvalQuestion> questions) {
     }
 
+    /**
+     * One evaluated question. The leading fields are the original result
+     * contract; prompt/completion tokens, cost and model were appended so
+     * callers that only read the old fields keep working unchanged. Token
+     * counts default to 0 and cost/model to null when the answer carried no
+     * usage (for example a pre-agent validation failure).
+     */
     public record CaseResult(int id, String category, String difficulty, String question,
                              String expectedStatus, String status, boolean passed, String message,
                              String goldenSql, String generatedSql, int expectedRows, int actualRows,
-                             long latencyMs, String mode, String code) {
+                             long latencyMs, String mode, String code,
+                             int promptTokens, int completionTokens, BigDecimal costUsd,
+                             String model) {
         static CaseResult failed(EvalQuestion question, String status, String message, long latency) {
             return new CaseResult(question.id(), question.category(), question.difficulty(),
                     question.question(), question.expectedStatus(), status, false, message,
-                    question.goldenSql(), null, 0, 0, latency, null, "ERROR");
+                    question.goldenSql(), null, 0, 0, latency, null, "ERROR",
+                    0, 0, null, null);
         }
     }
 

@@ -136,6 +136,50 @@ class EvaluationServiceTest {
         verifyNoInteractions(agent);
     }
 
+    @Test
+    void recordsTokenUsageAndModelOnTheCaseResult() {
+        AgentResult.Usage usage = new AgentResult.Usage(2, 1234, 567,
+                new BigDecimal("0.001234"), "deepseek-flash");
+        when(agent.ask(anyString(), any(), any())).thenReturn(answer(rows(BigDecimal.TEN), usage));
+        when(queryExecutor.execute(GOLDEN_SQL)).thenReturn(golden(rows(BigDecimal.TEN)));
+
+        EvaluationService.CaseResult result = service.evaluate(question(), admin());
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.promptTokens()).isEqualTo(1234);
+        assertThat(result.completionTokens()).isEqualTo(567);
+        assertThat(result.costUsd()).isEqualByComparingTo("0.001234");
+        assertThat(result.model()).isEqualTo("deepseek-flash");
+    }
+
+    @Test
+    void keepsFailureUsageSoFailedGenerationsStillReportTokens() {
+        AgentResult.Usage usage = new AgentResult.Usage(1, 800, 0,
+                new BigDecimal("0.0008"), "deepseek-flash");
+        when(agent.ask(anyString(), any(), any())).thenReturn(failedAnswer(usage));
+
+        EvaluationService.CaseResult result = service.evaluate(question(), admin());
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.promptTokens()).isEqualTo(800);
+        assertThat(result.completionTokens()).isZero();
+        assertThat(result.costUsd()).isEqualByComparingTo("0.0008");
+        assertThat(result.model()).isEqualTo("deepseek-flash");
+    }
+
+    @Test
+    void defaultsUsageToZeroAndNullWhenTheAgentResultHasNone() {
+        when(agent.ask(anyString(), any(), any())).thenReturn(answer(rows(BigDecimal.TEN), null));
+        when(queryExecutor.execute(GOLDEN_SQL)).thenReturn(golden(rows(BigDecimal.TEN)));
+
+        EvaluationService.CaseResult result = service.evaluate(question(), admin());
+
+        assertThat(result.promptTokens()).isZero();
+        assertThat(result.completionTokens()).isZero();
+        assertThat(result.costUsd()).isNull();
+        assertThat(result.model()).isNull();
+    }
+
     private EvaluationService.EvalQuestion question() {
         return new EvaluationService.EvalQuestion(1, "sales", "easy", "今年销售额", "OK",
                 GOLDEN_SQL, List.of("v_sales_fact"));
@@ -157,20 +201,28 @@ class EvaluationServiceTest {
     }
 
     private AgentResult answer(QueryExecutor.QueryExecution execution) {
+        return answer(execution, AgentResult.Usage.empty());
+    }
+
+    private AgentResult answer(QueryExecutor.QueryExecution execution, AgentResult.Usage usage) {
         return new AgentResult("OK", "今年销售额", "AI", GENERATED_SQL, GENERATED_SQL, "说明", 0.9,
                 null, AgentResult.GuardInfo.empty(),
                 new AgentResult.QueryResult(execution.columns(), execution.rows(), false,
                         execution.rows().size()),
-                AgentResult.Usage.empty(),
+                usage,
                 new AgentResult.Performance(0, 0, 0, 0, 1, null, List.of()),
                 AgentResult.SchemaInfo.empty(), new AgentResult.Failure(null, null, null),
                 List.of(), false, null);
     }
 
     private AgentResult failedAnswer() {
+        return failedAnswer(AgentResult.Usage.empty());
+    }
+
+    private AgentResult failedAnswer(AgentResult.Usage usage) {
         return new AgentResult("ERROR", "今年销售额", "AI", null, null, null, 0,
                 null, AgentResult.GuardInfo.empty(), AgentResult.QueryResult.empty(),
-                AgentResult.Usage.empty(),
+                usage,
                 new AgentResult.Performance(0, 0, 0, 0, 1, null, List.of()),
                 AgentResult.SchemaInfo.empty(),
                 new AgentResult.Failure("generate", "GENERATION_FAILED", "模型调用失败"),
