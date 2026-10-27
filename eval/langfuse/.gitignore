@@ -1,0 +1,9 @@
+# Local credentials and run output
+.env
+last-run.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
